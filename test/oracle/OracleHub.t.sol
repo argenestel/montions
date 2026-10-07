@@ -36,15 +36,16 @@ contract OracleHubTest is Test {
         base = new MockERC20("Test MON", "tMON", 18, address(this));
         pool = new SpotPool(address(base), address(usdc), address(this));
         hub = new OracleHub(address(this));
-        hub.registerAsset(ASSET, address(pool));
+        hub.registerAsset(ASSET, address(pool), 0);
 
         base.mint(address(this), 50_000_000e18);
         usdc.mint(address(this), 50_000_000e6);
         base.approve(address(pool), type(uint256).max);
         usdc.approve(address(pool), type(uint256).max);
 
-        // Deep seeded demo pool at $1.00.
+        // Deep seeded demo pool at $1.00. addLiquidity writes the first observation.
         pool.addLiquidity(1_000_000e18, 1_000_000e6);
+        _syncPath();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -54,12 +55,49 @@ contract OracleHubTest is Test {
     function test_registerAsset_ownerOnly() public {
         assertTrue(hub.assetExists(ASSET));
         assertEq(hub.poolOf(ASSET), address(pool));
+        bytes32 other = keccak256("NVDA");
         vm.prank(address(0xB0B));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        hub.registerAsset(ASSET, address(pool));
+        hub.registerAsset(other, address(pool), 0);
 
         vm.expectRevert(OracleHub.ZeroAddress.selector);
-        hub.registerAsset(ASSET, address(0));
+        hub.registerAsset(other, address(0), 0);
+
+        hub.registerAsset(other, address(pool), 123);
+        assertEq(hub.poolOf(other), address(pool));
+        assertEq(hub.minQuoteReserve(other), 123);
+    }
+
+    function test_registerAsset_oneTimeReverts() public {
+        vm.expectRevert(abi.encodeWithSelector(OracleHub.AssetAlreadyRegistered.selector, ASSET));
+        hub.registerAsset(ASSET, address(pool), 1);
+
+        bytes32 other = keccak256("X");
+        hub.registerAsset(other, address(pool), 50_000e6);
+        vm.expectRevert(abi.encodeWithSelector(OracleHub.AssetAlreadyRegistered.selector, other));
+        hub.registerAsset(other, address(pool), 0);
+    }
+
+    function test_isHealthy_trueFalseUnknown() public {
+        // ASSET was registered with minQuoteReserve = 0, so any quote reserve is healthy.
+        assertTrue(hub.isHealthy(ASSET));
+
+        bytes32 guarded = keccak256("GUARDED");
+        SpotPool p2 = new SpotPool(address(base), address(usdc), address(this));
+        hub.registerAsset(guarded, address(p2), 100_000e6);
+
+        assertFalse(hub.isHealthy(guarded), "empty pool below floor");
+
+        base.approve(address(p2), type(uint256).max);
+        usdc.approve(address(p2), type(uint256).max);
+        p2.addLiquidity(1_000e18, 50_000e6);
+        assertFalse(hub.isHealthy(guarded), "50k < 100k floor");
+
+        p2.addLiquidity(1_000e18, 50_000e6);
+        assertTrue(hub.isHealthy(guarded), "100k >= 100k floor");
+
+        vm.expectRevert(abi.encodeWithSelector(IPriceOracle.UnknownAsset.selector, UNKNOWN));
+        hub.isHealthy(UNKNOWN);
     }
 
     function test_unknownAsset() public {
@@ -74,42 +112,51 @@ contract OracleHubTest is Test {
     }
 
     function test_latestPrice_fromObservation() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(IPriceOracle.HistoryUnavailable.selector, ASSET, uint64(T0))
-        );
-        hub.latestPrice(ASSET);
-
-        pool.checkpoint();
         (uint256 p, uint64 ts) = hub.latestPrice(ASSET);
         assertEq(p, 1e18);
         assertEq(ts, T0);
 
-        // Uncheckpointed liquidity add must NOT change latestPrice (obs is the source).
+        // addLiquidity writes / updates the observation so latestPrice tracks the new spot.
+        vm.warp(T0 + 10);
         pool.addLiquidity(0, 1_000_000e6); // spot now $2
         (p, ts) = hub.latestPrice(ASSET);
-        assertEq(p, 1e18);
-        assertEq(ts, T0);
+        assertEq(p, 2e18);
+        assertEq(ts, T0 + 10);
         assertEq(pool.priceWad(), 2e18);
     }
 
     function test_checkpoint_asset() public {
+        uint256 n = pool.observationCount();
+        vm.warp(T0 + 1);
         hub.checkpoint(ASSET);
-        assertEq(pool.observationCount(), 1);
+        assertEq(pool.observationCount(), n + 1);
+    }
+
+    function test_realizedVol_sampleCapIs512() public view {
+        assertEq(hub.MAX_VOL_SAMPLES(), 512);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    TWAP HAND-COMPUTED                      */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Piecewise path: $1 for 300s, $2 for 300s, $1 thereafter.
+    /// @notice Exact `(t - window, t]` accumulation, hand-computed.
     ///
-    ///         t:  T0 ----+300----+600---->+
-    ///         p:  $1     $2      $1
-    ///         cum(T0)=0
-    ///         cum(T0+300)=1e18*300
-    ///         cum(T0+600)=300e18 + 2e18*300 = 900e18
+    ///         Seed at T0 wrote obs0: ts=T0, cum=0, price=$1.
+    ///         Then:
+    ///           t = T0+300  obs1 price=$2  cum = $1 * 300 = 300e18
+    ///           t = T0+600  obs2 price=$1  cum = 300e18 + $2 * 300 = 900e18
+    ///
+    ///         C(τ) = obs(τ).cum + obs(τ).price * (τ - obs(τ).ts)
+    ///         twap(t, w) = (C(t) - C(t-w)) / w
+    ///
+    ///         C(T0)        = 0
+    ///         C(T0+300)    = 300e18 + $2 * 0 = 300e18
+    ///         C(T0+301)    = 300e18 + $2 * 1 = 302e18
+    ///         C(T0+600)    = 900e18
+    ///         C(T0+299)    = 0 + $1 * 299 = 299e18
     function test_twap_handComputedPiecewise() public {
-        _checkpointRecord(); // T0, $1
+        // setUp already seeded $1 at T0.
         _warpSet(T0 + 300, 2e18);
         _checkpointRecord();
         _warpSet(T0 + 600, 1e18);
@@ -128,21 +175,59 @@ contract OracleHubTest is Test {
         // Window straddling the $1→$2 jump: (T0+150, T0+450] = 150s@$1 + 150s@$2 = $1.50
         assertEq(hub.twapAt(ASSET, uint64(T0 + 450), 300), 1.5e18);
 
-        // 1-second window ending exactly on the $2 observation: still $1 (open at left)
+        // 1-second window ending exactly on the $2 observation: still $1
+        // (new forward price has dt=0 at its own ts).
         assertEq(hub.twapAt(ASSET, uint64(T0 + 300), 1), 1e18);
+        // C(T0+300)-C(T0+299) = 300e18 - 299e18 = 1e18
 
         // 1-second window just after the $2 observation: $2
         assertEq(hub.twapAt(ASSET, uint64(T0 + 301), 1), 2e18);
 
-        // t-window == first observation timestamp (edge)
+        // t-window == first observation timestamp (left endpoint excluded, history available)
         assertEq(hub.twapAt(ASSET, uint64(T0 + 300), 300), 1e18);
 
         // t exactly on last observation
         assertEq(hub.twapAt(ASSET, uint64(T0 + 600), 600), 1.5e18);
     }
 
+    /// @notice Closed-form integers proving `(t-window, t]` endpoints and last-price hold.
+    ///
+    ///         obs: t=T0     p=$1   cum=0           (seed)
+    ///              t=T0+10  p=$10  cum=$1*10=10e18
+    ///              t=T0+15  p=$20  cum=10e18+$10*5=60e18
+    ///              t=T0+20  p=$40  cum=60e18+$20*5=160e18
+    ///
+    ///         C(τ)=obs(τ).cum + obs(τ).price*(τ-obs(τ).ts)
+    ///         C(T0+10)=10e18, C(T0+15)=60e18, C(T0+20)=160e18, C(T0+30)=560e18
+    ///
+    ///         (T0, T0+10]      = $1
+    ///         (T0+10, T0+15]   = $10
+    ///         (T0+15, T0+20]   = $20
+    ///         (T0+10, T0+20]   = (5*$10+5*$20)/10 = $15
+    ///         (T0+19, T0+20]   = $20   (new price has dt=0 at its own ts)
+    ///         (T0+20, T0+21]   = $40   (forward price starts the next second)
+    ///         (T0+20, T0+30]   = $40   (extrapolate last price)
+    ///         (T0, T0+30]      = (10*$1+5*$10+5*$20+10*$40)/30 = 560e18/30
+    function test_twap_handComputedEndpointsAndExtrapolation() public {
+        _warpSet(T0 + 10, 10e18);
+        _checkpointRecord();
+        _warpSet(T0 + 15, 20e18);
+        _checkpointRecord();
+        _warpSet(T0 + 20, 40e18);
+        _checkpointRecord();
+
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 10), 10), 1e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 15), 5), 10e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 20), 5), 20e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 20), 10), 15e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 20), 1), 20e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 21), 1), 40e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 30), 10), 40e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 30), 30), uint256(560e18) / 30);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 30), 30), _refTwap(T0 + 30, 30));
+    }
+
     function test_twap_futureExtrapolation() public {
-        _checkpointRecord(); // T0 $1
         _warpSet(T0 + 100, 2e18);
         _checkpointRecord();
 
@@ -154,7 +239,6 @@ contract OracleHubTest is Test {
     }
 
     function test_twap_pastAndGaps() public {
-        _checkpointRecord(); // T0 $1
         vm.warp(T0 + 10_000);
         _setPrice(3e18);
         _checkpointRecord();
@@ -168,7 +252,6 @@ contract OracleHubTest is Test {
     }
 
     function test_twap_sameBlockSwaps() public {
-        _checkpointRecord(); // T0 $1
         vm.warp(T0 + 100);
 
         uint256 n0 = pool.observationCount();
@@ -187,8 +270,22 @@ contract OracleHubTest is Test {
         assertEq(hub.twapAt(ASSET, uint64(T0 + 200), 100), pool.priceWad());
     }
 
+    function test_twap_addLiquidityDoesNotRewriteHistory() public {
+        // Owner one-sided add at T0+100 moves spot $1 → $2. TWAP over (T0, T0+100]
+        // must still be $1 (pre-change price recorded before reserves move).
+        vm.warp(T0 + 100);
+        pool.addLiquidity(0, 1_000_000e6);
+        _syncPath();
+        assertEq(pool.priceWad(), 2e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 100), 100), 1e18);
+        // After the add, last price $2 is what extrapolates.
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 200), 100), 2e18);
+        // Combined (T0, T0+200] = 100s@$1 + 100s@$2 = $1.50
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 200), 200), 1.5e18);
+        assertEq(hub.twapAt(ASSET, uint64(T0 + 200), 200), _refTwap(T0 + 200, 200));
+    }
+
     function test_twap_windowZeroAndHistoryUnavailable() public {
-        _checkpointRecord();
         vm.expectRevert(OracleHub.InvalidWindow.selector);
         hub.twapAt(ASSET, uint64(T0 + 10), 0);
 
@@ -204,7 +301,6 @@ contract OracleHubTest is Test {
     }
 
     function test_twap_multipleSwapsRecordedPath() public {
-        _checkpointRecord();
         uint256 t = T0;
         for (uint256 i; i < 8; ++i) {
             t += 15 + i * 3;
@@ -227,25 +323,27 @@ contract OracleHubTest is Test {
     }
 
     function test_twap_ringWraparound() public {
-        _checkpointRecord(); // T0 $1, logical 0
-        // Write 1024 additional observations, overwriting index 0 on the last one.
-        for (uint256 i = 1; i <= 1024; ++i) {
+        // setUp wrote obs at T0. Write RING_SIZE more, overwriting index 0 on the last one.
+        uint256 ring = pool.RING_SIZE();
+        vm.pauseGasMetering();
+        for (uint256 i = 1; i <= ring; ++i) {
             vm.warp(T0 + i);
             pool.checkpoint();
         }
-        assertEq(pool.observationCount(), 1025);
-        assertEq(pool.observationLength(), 1024);
+        vm.resumeGasMetering();
+        assertEq(pool.observationCount(), ring + 1);
+        assertEq(pool.observationLength(), ring);
         (uint32 oldest,,) = pool.observationAt(0);
         assertEq(oldest, T0 + 1);
 
-        // History at T0 is gone.
+        // History at T0 is gone: window start predates the oldest observation.
         vm.expectRevert(
             abi.encodeWithSelector(IPriceOracle.HistoryUnavailable.selector, ASSET, uint64(T0 + 10))
         );
         hub.twapAt(ASSET, uint64(T0 + 10), 10);
 
         // Window fully inside the retained ring still works (constant $1).
-        uint256 t = T0 + 1024;
+        uint256 t = T0 + ring;
         assertEq(hub.twapAt(ASSET, uint64(t), 500), 1e18);
         // Left edge of retained history: t-window == oldest ts
         assertEq(hub.twapAt(ASSET, uint64(T0 + 1 + 50), 50), 1e18);
@@ -279,15 +377,13 @@ contract OracleHubTest is Test {
     function test_realizedVol_constantPriceIsZero() public {
         uint32 step = 60;
         uint32 lookback = 600; // 10 steps → 11 samples
-        pool.checkpoint();
-        // Need history back to now - lookback - step.
+        // Need history back to now - lookback - step. Seed already wrote T0.
         vm.warp(T0 + lookback + step);
         pool.checkpoint();
         assertEq(hub.realizedVol(ASSET, lookback, step), 0);
     }
 
-    function test_realizedVol_insufficientHistoryIsZero() public {
-        pool.checkpoint();
+    function test_realizedVol_insufficientHistoryIsZero() public view {
         assertEq(hub.realizedVol(ASSET, 10, 0), 0);
         assertEq(hub.realizedVol(ASSET, 10, 60), 0); // lookback < 2*step
         assertEq(hub.realizedVol(ASSET, 600, 60), 0); // not enough elapsed time
@@ -295,8 +391,7 @@ contract OracleHubTest is Test {
 
     function test_realizedVol_alternatingPath() public {
         uint32 step = 60;
-        // 8 steps of alternating $1 / $2 after an initial $1 sample.
-        pool.checkpoint();
+        // 8 steps of alternating $1 / $2 after an initial $1 sample (seed).
         bool high;
         for (uint256 i = 1; i <= 12; ++i) {
             vm.warp(T0 + i * uint256(step));
@@ -326,6 +421,17 @@ contract OracleHubTest is Test {
         uint256 stdev = a * FixedPointMathLib.sqrt(nRets * 1e18 / (nRets - 1)) / 1e9;
         uint256 ann = stdev * FixedPointMathLib.sqrt((YEAR * 1e18) / uint256(step)) / 1e9;
         assertApproxEqRel(vol, ann, 0.02e18);
+    }
+
+    function test_realizedVol_capsAt512Samples() public {
+        // Two observations spanning plenty of time: constant $1, vol = 0 even if lookback
+        // would request more than 512 samples without the cap.
+        vm.warp(T0 + 1_000_000);
+        pool.checkpoint();
+        uint32 step = 60;
+        uint32 lookback = uint32(600 * 60); // 601 samples if uncapped
+        assertGt(uint256(lookback) / uint256(step) + 1, 512);
+        assertEq(hub.realizedVol(ASSET, lookback, step), 0);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -366,6 +472,7 @@ contract OracleHubTest is Test {
             }
         }
         assertEq(pool.priceWad(), priceWad, "exact price");
+        _syncPath();
     }
 
     function _refCum(uint256 t) internal view returns (uint256 cum) {
@@ -388,8 +495,7 @@ contract OracleHubTest is Test {
     }
 
     function _buildFuzzPath() internal {
-        if (path.length != 0) return;
-        _checkpointRecord();
+        if (path.length > 1) return;
         uint256 t = T0;
         uint256[12] memory prices = [
             uint256(1e18),

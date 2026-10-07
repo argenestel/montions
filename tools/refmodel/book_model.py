@@ -13,6 +13,8 @@ UNIT = 1_000_000
 TICK_UNIT = 10_000
 TICKS = 100
 DEFAULT_MAX_FILLS = 32
+MAX_QTY = (1 << 40) - 1
+MAX_DATA_LENGTH = 512
 TRADE_RING = 64
 BOOK = "__book__"
 
@@ -58,6 +60,7 @@ class Order:
     qty: int
     orig_qty: int
     placed_at: int
+    fee_reserve: int = 0
     open: bool = True
 
 
@@ -120,19 +123,21 @@ class BookModel:
         return order.qty * (100 - order.tick) * TICK_UNIT
 
     def _release_order(self, order: Order):
-        """Cancel an order, returning its remaining cash or held YES."""
+        """Cancel an order, returning its remaining cash and escrowed outcome token."""
         assert order.open
         a = self.accounts[order.maker]
-        if order.side == "Bid" or (order.side == "Ask" and not order.from_held):
-            amount = self._escrow_cost(order)
+        amount = self._escrow_cost(order) + order.fee_reserve
+        if amount:
             assert a.locked >= amount
             a.locked -= amount
             a.cash += amount
-        elif order.qty:
+            order.fee_reserve = 0
+        if order.qty and order.from_held:
             sid = order.series
-            assert self.tokens[(BOOK, sid, "YES")] >= order.qty
-            self.tokens[(BOOK, sid, "YES")] -= order.qty
-            self.tokens[(order.maker, sid, "YES")] += order.qty
+            outcome = "NO" if order.side == "Bid" else "YES"
+            assert self.tokens[(BOOK, sid, outcome)] >= order.qty
+            self.tokens[(BOOK, sid, outcome)] -= order.qty
+            self.tokens[(order.maker, sid, outcome)] += order.qty
         order.open = False
         order.qty = 0
 
@@ -154,8 +159,10 @@ class BookModel:
             return 0
         return (notional * self.taker_fee_bps + 9_999) // 10_000
 
-    def create_series(self, sid: int, expiry: int):
+    def create_series(self, sid: int, expiry: int, data_length: int = 32):
         sid = int(sid)
+        if int(data_length) > MAX_DATA_LENGTH:
+            raise ModelRevert("DataTooLong")
         if sid in self.series:
             raise ModelRevert("SeriesExists")
         if expiry < self.now + 120 or expiry > self.now + 90 * 24 * 3600:
@@ -182,7 +189,7 @@ class BookModel:
     def split(self, user: str, sid: int, qty: int):
         s = self._series_open(sid)
         self._check_before_expiry(s)
-        if qty == 0:
+        if not 1 <= int(qty) <= MAX_QTY:
             raise ModelRevert("BadQty")
         cost = int(qty) * UNIT
         a = self.accounts[str(user)]
@@ -197,7 +204,7 @@ class BookModel:
 
     def merge(self, user: str, sid: int, qty: int):
         s = self._series_open(sid)
-        if qty == 0:
+        if not 1 <= int(qty) <= MAX_QTY:
             raise ModelRevert("BadQty")
         y = self._user_token(user, sid, "YES")
         n = self._user_token(user, sid, "NO")
@@ -234,57 +241,62 @@ class BookModel:
         self._check_before_expiry(s)
         if not 1 <= int(tick) <= 99:
             raise ModelRevert("BadTick")
-        if int(qty) == 0:
+        if not 1 <= int(qty) <= MAX_QTY:
             raise ModelRevert("BadQty")
         if side not in ("Bid", "Ask"):
             raise ModelRevert("BadTick")
         if tif not in ("GTC", "IOC", "POST_ONLY"):
             raise ValueError(tif)
-        if side == "Bid" and from_held:
-            # The interface only defines fromHeld for Ask. There is no dedicated error.
-            raise ModelRevert("BadQty")
-        probe = Order(0, str(user), int(sid), side, int(tick), bool(from_held), int(qty), int(qty), self.now)
+        probe = Order(0, str(user), int(sid), side, int(tick), bool(from_held),
+                      int(qty), int(qty), self.now)
+        # POST_ONLY checks the book before STP, including orders owned by the caller.
         if tif == "POST_ONLY" and self._would_cross(probe):
             raise ModelRevert("WouldCross")
+
         a = self.accounts[str(user)]
-        if side == "Bid":
-            lock = int(qty) * int(tick) * TICK_UNIT
-            if a.cash < lock:
-                raise ModelRevert("InsufficientCash")
-            a.cash -= lock
-            a.locked += lock
-        elif from_held:
+        escrow = self._escrow_cost(probe)
+        fee_reserve = self._fee(escrow) if not from_held else 0
+        if side == "Bid" and from_held:
+            held = self._user_token(user, sid, "NO")
+            if held < qty:
+                raise ModelRevert("InsufficientTokens")
+        elif side == "Ask" and from_held:
             held = self._user_token(user, sid, "YES")
             if held < qty:
                 raise ModelRevert("InsufficientTokens")
-            self._set_token(user, sid, "YES", held - int(qty))
-            self.tokens[(BOOK, int(sid), "YES")] += int(qty)
-        else:
-            lock = int(qty) * (100 - int(tick)) * TICK_UNIT
-            if a.cash < lock:
-                raise ModelRevert("InsufficientCash")
-            a.cash -= lock
-            a.locked += lock
+        if a.cash < escrow + fee_reserve:
+            # Include the maximum fee reserve in the up-front cash check.
+            raise ModelRevert("InsufficientCash")
+
+        if escrow or fee_reserve:
+            a.cash -= escrow + fee_reserve
+            a.locked += escrow + fee_reserve
+        if from_held:
+            outcome = "NO" if side == "Bid" else "YES"
+            self._set_token(user, sid, outcome, self._user_token(user, sid, outcome) - int(qty))
+            self.tokens[(BOOK, int(sid), outcome)] += int(qty)
 
         oid = self.next_order_id
         self.next_order_id += 1
         self.order_count += 1
-        incoming = Order(oid, str(user), int(sid), side, int(tick), bool(from_held), int(qty), int(qty), self.now)
+        incoming = Order(oid, str(user), int(sid), side, int(tick), bool(from_held),
+                         int(qty), int(qty), self.now, fee_reserve)
         self.orders[oid] = incoming
         s.orders[oid] = incoming
         self.user_order_ids[str(user)].append(oid)
         left = int(qty)
-        fills = 0
-        notional = 0
+        matched_orders = 0  # A fill or an STP cancellation consumes one maxFills slot.
+        taker_collateral_consumed = 0
         fill_limit = int(max_fills) if max_fills else DEFAULT_MAX_FILLS
 
-        while left > 0 and fills < fill_limit:
+        while left > 0 and matched_orders < fill_limit:
             candidates = self._opposite_sorted(incoming)
             if not candidates:
                 break
             maker = candidates[0]
             if maker.maker == str(user):
                 self._release_order(maker)
+                matched_orders += 1
                 continue
             # The selected resting order is exactly the best eligible price/time order.
             assert maker is min(candidates, key=lambda o: (o.tick if side == "Bid" else -o.tick, o.id))
@@ -296,73 +308,122 @@ class BookModel:
                 "eligible_before": [(x.id, x.tick, x.maker) for x in candidates],
             }
             self.trade_audit.append(audit)
+            ma = self.accounts[maker.maker]
+            execution = p * TICK_UNIT * q
+            full_value = UNIT * q
 
-            if side == "Bid":
-                # Taker's limit escrow is consumed; maker price savings return to free cash.
+            if side == "Bid" and not from_held:
+                # Ordinary YES bid: spend the maker price and refund limit savings.
                 taker_limit = int(tick) * TICK_UNIT * q
-                execution = p * TICK_UNIT * q
                 assert a.locked >= taker_limit
                 a.locked -= taker_limit
                 a.cash += taker_limit - execution
                 if maker.from_held:
-                    ma = self.accounts[maker.maker]
                     ma.cash += execution
                     self.tokens[(BOOK, int(sid), "YES")] -= q
                     self.tokens[(str(user), int(sid), "YES")] += q
                 else:
-                    ma = self.accounts[maker.maker]
                     maker_collateral = (100 - p) * TICK_UNIT * q
                     assert ma.locked >= maker_collateral
                     ma.locked -= maker_collateral
-                    s.pool += q * UNIT
+                    s.pool += full_value
                     self.tokens[(str(user), int(sid), "YES")] += q
                     self.tokens[(maker.maker, int(sid), "NO")] += q
-            else:
-                maker_cash = p * TICK_UNIT * q
-                ma = self.accounts[maker.maker]
-                maker_bid_lock = p * TICK_UNIT * q
+                taker_collateral_consumed += execution
+
+            elif side == "Bid":
+                # Close-NO bid: pay p, combine NO with YES, and receive UNIT gross.
+                taker_limit = int(tick) * TICK_UNIT * q
+                assert a.locked >= taker_limit
+                a.locked -= taker_limit
+                a.cash += taker_limit - execution + full_value
+                if maker.from_held:
+                    ma.cash += execution
+                    self.tokens[(BOOK, int(sid), "YES")] -= q
+                    self.tokens[(BOOK, int(sid), "NO")] -= q
+                    s.pool -= full_value
+                else:
+                    maker_collateral = (100 - p) * TICK_UNIT * q
+                    assert ma.locked >= maker_collateral
+                    ma.locked -= maker_collateral
+                    # The writer's new NO leg is replaced by the caller's escrowed NO.
+                    self.tokens[(BOOK, int(sid), "NO")] -= q
+                    self.tokens[(maker.maker, int(sid), "NO")] += q
+                taker_collateral_consumed += full_value - execution
+
+            elif side == "Ask" and not from_held:
+                # Write Ask taker: either normal YES bid or a resting close-NO bid.
+                taker_limit = (100 - int(tick)) * TICK_UNIT * q
+                taker_collateral = (100 - p) * TICK_UNIT * q
+                assert a.locked >= taker_limit
+                a.locked -= taker_limit
+                a.cash += taker_limit - taker_collateral
+                maker_bid_lock = execution
                 assert ma.locked >= maker_bid_lock
                 ma.locked -= maker_bid_lock
-                if from_held:
-                    self.tokens[(BOOK, int(sid), "YES")] -= q
-                    self.tokens[(maker.maker, int(sid), "YES")] += q
-                    a.cash += maker_cash
+                if maker.from_held:
+                    # The resting close-NO order funds UNIT together with this writer;
+                    # its NO is transferred to the taker instead of minting a new one.
+                    ma.cash += full_value
+                    self.tokens[(BOOK, int(sid), "NO")] -= q
+                    self.tokens[(str(user), int(sid), "NO")] += q
                 else:
-                    taker_limit = (100 - int(tick)) * TICK_UNIT * q
-                    taker_collateral = (100 - p) * TICK_UNIT * q
-                    assert a.locked >= taker_limit
-                    a.locked -= taker_limit
-                    a.cash += taker_limit - taker_collateral
-                    s.pool += q * UNIT
+                    s.pool += full_value
                     self.tokens[(maker.maker, int(sid), "YES")] += q
                     self.tokens[(str(user), int(sid), "NO")] += q
+                taker_collateral_consumed += taker_collateral
+
+            else:  # Ask.fromHeld: sell held YES, or merge against a close-NO bid.
+                maker_bid_lock = execution
+                assert ma.locked >= maker_bid_lock
+                ma.locked -= maker_bid_lock
+                if maker.from_held:
+                    # Close-NO maker pays p and redeems the escrowed YES/NO pair.
+                    a.cash += execution
+                    ma.cash += full_value
+                    self.tokens[(BOOK, int(sid), "YES")] -= q
+                    self.tokens[(BOOK, int(sid), "NO")] -= q
+                    s.pool -= full_value
+                else:
+                    self.tokens[(BOOK, int(sid), "YES")] -= q
+                    self.tokens[(maker.maker, int(sid), "YES")] += q
+                    a.cash += execution
+                taker_collateral_consumed += execution
 
             left -= q
             incoming.qty -= q
             maker.qty -= q
-            fills += 1
-            notional += q * p * TICK_UNIT
+            matched_orders += 1
             s.last_tick = p
             s.volume += q
             s.trades.appendleft({"ts": self.now, "tick": p, "qty": q, "takerIsBuyer": side == "Bid"})
             if maker.qty == 0:
                 maker.open = False
 
-        fee = self._fee(notional)
-        if fee:
-            if a.cash < fee:
-                raise ModelRevert("InsufficientCash")
+        fee = self._fee(taker_collateral_consumed)
+        if incoming.fee_reserve:
+            reserve = incoming.fee_reserve
+            assert reserve >= fee
+            assert a.locked >= reserve
+            a.locked -= reserve
+            a.cash += reserve - fee
+            incoming.fee_reserve = 0
+        elif fee:
+            # Held-token sellers pay only from their gross sale/close proceeds.
+            assert fee <= taker_collateral_consumed
+            assert a.cash >= fee
             a.cash -= fee
-            self.protocol_fees += fee
+        self.protocol_fees += fee
 
         resting = 0
         if left:
             incoming.qty = left
             still_crosses = bool(self._opposite_sorted(incoming))
             if tif == "GTC" and not still_crosses:
+                # Any unfilled fee reserve is refunded as soon as the order rests.
                 resting = left
             else:
-                # IOC remainder, max-fills still-crossing remainder, or another TIF: refund.
+                # IOC or a maxFills-limited order that still crosses is refunded.
                 self._release_order(incoming)
         else:
             incoming.open = False
@@ -389,7 +450,7 @@ class BookModel:
         s = self.series[int(sid)]
         if s.status != "Open":
             raise ModelRevert("AlreadySettled")
-        if self.now < s.expiry:
+        if self.now <= s.expiry:
             raise ModelRevert("NotExpired")
         if resolver_ready:
             s.status = "Resolved"
@@ -469,7 +530,7 @@ class BookModel:
         # 4. Per-user locked balances equal escrow of open cash-backed orders.
         expected_locked: dict[str, int] = defaultdict(int)
         for o in self._open_orders():
-            expected_locked[o.maker] += self._escrow_cost(o)
+            expected_locked[o.maker] += self._escrow_cost(o) + o.fee_reserve
         for user, account in self.accounts.items():
             assert account.locked == expected_locked[user], ("locked escrow", user, account.locked, expected_locked[user])
 
@@ -505,7 +566,7 @@ class BookModel:
             assert unchanged
 
     def owner_set_fee(self, bps: int):
-        if bps > 100:
+        if not 0 <= bps <= 100:
             raise ModelRevert("FeeTooHigh")
         snap = self._user_snapshot()
         self.taker_fee_bps = int(bps)
@@ -528,7 +589,7 @@ class BookModel:
         kind = op["kind"]
         try:
             if kind == "create":
-                result = self.create_series(op["series"], op["expiry"])
+                result = self.create_series(op["series"], op["expiry"], op.get("dataLength", 32))
                 out = {"ok": True, "seriesId": result}
             elif kind == "deposit":
                 self.deposit(op["user"], op["amount"])
@@ -563,8 +624,11 @@ class BookModel:
             self.assert_invariants()
             return out
         except ModelRevert as exc:
+            failed_at = self.now
             self.__dict__.clear()
             self.__dict__.update(snapshot)
+            # block.timestamp is environmental, not transaction state.
+            self.now = failed_at
             self.assert_invariants()
             return {"ok": False, "error": exc.name}
         except Exception:

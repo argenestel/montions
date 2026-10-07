@@ -169,14 +169,14 @@ function priceWad() external view returns (uint256);                         // 
 function checkpoint() external;                                              // anyone: write an observation now
 function observationCount() external view returns (uint256);
 // src/oracle/OracleHub.sol  (implements IPriceOracle)
-constructor(address owner_);  function registerAsset(bytes32 assetId, address pool) external; /* owner */  function poolOf(bytes32 assetId) external view returns (address);
+constructor(address owner_);  function registerAsset(bytes32 assetId, address pool, uint256 minQuoteReserve) external; /* owner, one-time per asset */ function isHealthy(bytes32 assetId) external view returns (bool);  function poolOf(bytes32 assetId) external view returns (address);
 function checkpoint(bytes32 assetId) external;                                 // anyone
 
 // src/resolvers/TwapThresholdResolver.sol (implements IResolver)
-constructor();  function decode(bytes calldata data) external pure returns (address oracle, bytes32 assetId, uint256 strikeWad, bool above, uint32 window);
+constructor(address trustedOracle, address owner_);  function decode(bytes calldata data) external pure returns (address oracle, bytes32 assetId, uint256 strikeWad, bool above, uint32 window);
 function encode(address oracle, bytes32 assetId, uint256 strikeWad, bool above, uint32 window) external pure returns (bytes memory);
 // src/resolvers/TimelockOpResolver.sol (implements IResolver)
-constructor();  function encode(address timelock, bytes32 operationId) external pure returns (bytes memory);
+constructor(address owner_); function setTimelockAllowed(address timelock, bool allowed) external;  function encode(address timelock, bytes32 operationId) external pure returns (bytes memory);
 
 // src/pricing/PricingLib.sol  (internal library, WAD math)
 function normCdfWad(int256 xWad) internal pure returns (uint256 pWad);

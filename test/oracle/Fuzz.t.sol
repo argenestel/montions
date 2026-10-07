@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {OracleTestBase} from "./OracleTestBase.sol";
-import {SpotPool} from "../../src/oracle/SpotPool.sol";
 import {IPriceOracle} from "../../src/interfaces/IPriceOracle.sol";
 
 contract OracleFuzzTest is OracleTestBase {
@@ -90,7 +89,7 @@ contract OracleFuzzTest is OracleTestBase {
         pool.checkpoint();
         pool.checkpoint();
         pool.checkpoint();
-        // Either no-op (already written this block) or a single write.
+        // Either no-op (already written this timestamp) or a single write.
         uint256 n2 = pool.observationCount();
         assertTrue(n2 == n || n2 == n + 1);
         pool.checkpoint();

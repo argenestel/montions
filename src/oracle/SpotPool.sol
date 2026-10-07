@@ -11,21 +11,29 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///      to be seeded with deep reserves; it is NOT manipulation-resistant and MUST NOT be
 ///      treated as a production oracle. Labelled MOCK/DEMO.
 ///
+///      An attacker who moves the pool in the last seconds of an idle window influences
+///      the TWAP (the last observation's forward price is held until the next write).
+///      Depth and a longer window mitigate this; they never eliminate it.
+///
 ///      Quote token is tUSDC (6 decimals). Base token is an 18-decimal MOCK asset.
 ///      `priceWad` = USD per 1 whole base token, 1e18-scaled:
 ///          priceWad = quoteReserve * 10^30 / baseReserve
+///      Reverts `EmptyReserves` when either reserve is zero.
 ///
 ///      Swap fee is 0.30% (30 bps, Uniswap V2-style 997/1000) taken on input and accrued
 ///      in reserves (k = baseReserve * quoteReserve on raw token units is non-decreasing).
-///      Liquidity adds do not charge a fee and do not write an observation. Either side
-///      of `addLiquidity` may be zero so the demo owner can reprice without a swap.
+///      Liquidity adds do not charge a fee. Either side of `addLiquidity` may be zero so
+///      the demo owner can reprice without a swap. **Every `addLiquidity` that starts from
+///      or results in a priced pool writes an observation**: the pre-change price is
+///      recorded first (so the owner cannot silently rewrite TWAP history), reserves are
+///      updated, then the last observation's forward `price` is set to the post-change
+///      spot. A first seed (empty → priced) writes a single observation of the new price.
 ///
-///      Observations: a 1024-slot ring. A new slot is written on the first swap of a
-///      (block, timestamp) pair — i.e. the first swap of each block, and also after
-///      `vm.warp` within a block — and by `checkpoint()`. Later swaps at the same
-///      block+timestamp only refresh the last slot's `price`. When the ring is full,
-///      the next write overwrites the oldest sample (`nextObsIndex`); `observationCount`
-///      keeps growing so consumers can detect wrap.
+///      Observations: an 8192-slot ring. At most ONE observation per `block.timestamp`.
+///      A second write at the same timestamp (swap, checkpoint, or addLiquidity) updates
+///      that observation's `price` in place and never advances the ring. When the ring
+///      is full, the next new-timestamp write overwrites the oldest sample
+///      (`nextObsIndex`); `observationCount` keeps growing so consumers can detect wrap.
 ///
 ///      `cumPrice` is the cumulative `price * dt` in 1e18 scale. **Unchecked wrap of
 ///      `cumPrice` at 2^224 is intended** — consumers MUST difference nearby observations
@@ -35,10 +43,12 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///      `block.timestamp` (Y2106); a backwards time jump reverts on `dt` subtraction.
 ///
 ///      Each observation's `price` is forward-looking: it is the spot after the write
-///      (and after any later same-block/same-timestamp swaps). `cumPrice` at a write
-///      equals the previous `cumPrice + previous.price * dt`.
+///      (and after any later same-timestamp swaps / checkpoints / liquidity adds).
+///      `cumPrice` at a write equals the previous `cumPrice + previous.price * dt`.
+///      Between observations the price used by consumers is this forward price of the
+///      observation at or before `t`; beyond the last observation the last price is held.
 contract SpotPool is Ownable {
-    uint256 public constant RING_SIZE = 1024;
+    uint256 public constant RING_SIZE = 8192;
     uint256 public constant FEE_NUM = 997;
     uint256 public constant FEE_DEN = 1000;
     uint256 internal constant _PRICE_SCALE = 1e30; // 1e18 * 10^(18-6)
@@ -62,15 +72,13 @@ contract SpotPool is Ownable {
 
     /// @notice Total observations ever written (does not cap at RING_SIZE).
     uint256 public observationCount;
-    /// @notice Physical index of the next write (0..1023).
+    /// @notice Physical index of the next write (0..8191).
     uint16 public nextObsIndex;
     /// @notice Physical index of the newest observation. Meaningful iff `observationCount > 0`.
     uint16 public lastObsIndex;
-    /// @notice Block number of the last observation write.
-    uint256 public lastObsBlockNumber;
 
     /// @notice Physical ring. Prefer `observationAt` for logical (oldest-first) access.
-    Observation[1024] public observations;
+    Observation[8192] public observations;
 
     error ZeroAddress();
     error InvalidToken();
@@ -98,15 +106,37 @@ contract SpotPool is Ownable {
     }
 
     /// @notice Owner-only: pull `baseAmt`/`quoteAmt` from the caller and add them to reserves.
-    /// @dev No fee, no observation write. Either side may be zero (unbalanced add) so the
-    ///      demo owner can seed an exact price; both zero reverts. Checkpoint afterwards
-    ///      if the TWAP should pick up a reserve-ratio change from a liquidity add.
+    /// @dev No fee. Either side may be zero (unbalanced add) so the demo owner can seed an
+    ///      exact price; both zero reverts. Always writes an observation when the pool is
+    ///      (or becomes) priced: `_writeObservation` runs *before* reserve changes so the
+    ///      pre-change price is what TWAP accumulates up to this timestamp, then the last
+    ///      observation's forward `price` is set to the post-change spot. A first seed
+    ///      writes the new price after reserves are set. Same-timestamp adds update in
+    ///      place and do not advance the ring.
     function addLiquidity(uint256 baseAmt, uint256 quoteAmt) external onlyOwner {
         if (baseAmt == 0 && quoteAmt == 0) revert ZeroAmount();
+
+        bool priced = baseReserve != 0 && quoteReserve != 0;
+        if (priced) {
+            // Record the pre-change price at this timestamp (new slot or in-place).
+            _writeObservation();
+        }
+
         baseReserve += baseAmt;
         quoteReserve += quoteAmt;
         emit LiquidityAdded(baseAmt, quoteAmt);
         emit Sync(baseReserve, quoteReserve);
+
+        if (baseReserve != 0 && quoteReserve != 0) {
+            if (!priced) {
+                // Empty → priced: first observation is the new spot.
+                _writeObservation();
+            } else {
+                // Forward price becomes the post-change spot; cum already used the old price.
+                _setLastPrice(priceWad());
+            }
+        }
+
         if (baseAmt != 0) {
             SafeTransferLib.safeTransferFrom(baseToken, msg.sender, address(this), baseAmt);
         }
@@ -116,8 +146,9 @@ contract SpotPool is Ownable {
     }
 
     /// @notice Swap `amountIn` of `tokenIn` for the other token, sending output to `to`.
-    /// @dev First swap of a (block, timestamp) pair writes an observation. Subsequent
-    ///      swaps at the same block+timestamp only refresh the last observation's `price`.
+    /// @dev Writes an observation of the pre-swap spot (new slot on a new timestamp;
+    ///      in-place `price` update if this timestamp already has an observation), then
+    ///      sets the last observation's forward `price` to the post-swap spot.
     ///      Fee 0.30% on input, accrued in reserves.
     function swapExactIn(address tokenIn, uint256 amountIn, uint256 minOut, address to)
         external
@@ -141,7 +172,7 @@ contract SpotPool is Ownable {
         }
         if (reserveIn == 0 || reserveOut == 0) revert EmptyReserves();
 
-        _writeObservationIfNewSlot();
+        _writeObservation();
 
         out = _getAmountOut(amountIn, reserveIn, reserveOut);
         if (out < minOut) revert InsufficientOutput(out, minOut);
@@ -164,25 +195,22 @@ contract SpotPool is Ownable {
 
     /// @notice USD per 1 whole base token, 1e18-scaled.
     /// @dev `quoteReserve * 1e18 * 10^(18-6) / baseReserve` = `quoteReserve * 1e30 / baseReserve`.
+    ///      Reverts `EmptyReserves` if either reserve is zero.
     function priceWad() public view returns (uint256) {
         uint256 base_ = baseReserve;
-        if (base_ == 0) revert EmptyReserves();
-        return FixedPointMathLib.fullMulDiv(quoteReserve, _PRICE_SCALE, base_);
+        uint256 quote_ = quoteReserve;
+        if (base_ == 0 || quote_ == 0) revert EmptyReserves();
+        return FixedPointMathLib.fullMulDiv(quote_, _PRICE_SCALE, base_);
     }
 
     /// @notice Anyone: write an observation of the current spot at `block.timestamp`.
-    /// @dev If this (block, timestamp) already has an observation, only `price` is
-    ///      refreshed. Otherwise a new ring slot is appended.
+    /// @dev If this timestamp already has an observation, only `price` is refreshed.
+    ///      Otherwise a new ring slot is appended.
     function checkpoint() external {
-        if (baseReserve == 0 || quoteReserve == 0) revert EmptyReserves();
-        if (_alreadyWroteThisSlot()) {
-            _setLastPrice(priceWad());
-            return;
-        }
-        _pushObservation(priceWad());
+        _writeObservation();
     }
 
-    /// @notice Number of observations currently in the ring (`min(observationCount, 1024)`).
+    /// @notice Number of observations currently in the ring (`min(observationCount, 8192)`).
     function observationLength() public view returns (uint256) {
         uint256 n = observationCount;
         return n < RING_SIZE ? n : RING_SIZE;
@@ -216,14 +244,20 @@ contract SpotPool is Ownable {
         return FixedPointMathLib.fullMulDiv(ainFee, reserveOut, denom);
     }
 
-    function _alreadyWroteThisSlot() internal view returns (bool) {
-        return observationCount != 0 && lastObsBlockNumber == block.number
-            && observations[lastObsIndex].ts == uint32(block.timestamp);
+    function _alreadyWroteThisTimestamp() internal view returns (bool) {
+        return observationCount != 0 && observations[lastObsIndex].ts == uint32(block.timestamp);
     }
 
-    function _writeObservationIfNewSlot() internal {
-        if (_alreadyWroteThisSlot()) return;
-        _pushObservation(priceWad());
+    /// @dev Record current spot at `block.timestamp`. Same-timestamp calls update `price`
+    ///      in place and do not advance the ring. Reverts if the pool is empty.
+    function _writeObservation() internal {
+        if (baseReserve == 0 || quoteReserve == 0) revert EmptyReserves();
+        uint256 p = priceWad();
+        if (_alreadyWroteThisTimestamp()) {
+            _setLastPrice(p);
+            return;
+        }
+        _pushObservation(p);
     }
 
     function _pushObservation(uint256 priceWad_) internal {
@@ -243,11 +277,11 @@ contract SpotPool is Ownable {
         uint16 idx = nextObsIndex;
         observations[idx] = Observation({ts: ts, cumPrice: cum, price: p});
         lastObsIndex = idx;
+        // RING_SIZE is 8192 = 2^13; mask keeps the physical index in 0..8191 (fits uint16).
         nextObsIndex = uint16((uint256(idx) + 1) & (RING_SIZE - 1));
         unchecked {
             observationCount = n + 1;
         }
-        lastObsBlockNumber = block.number;
         emit ObservationWritten(ts, cum, p, idx);
     }
 

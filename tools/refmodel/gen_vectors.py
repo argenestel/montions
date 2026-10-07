@@ -6,15 +6,16 @@ import json
 import random
 from pathlib import Path
 
-from book_model import BookModel, UNIT
+from book_model import BookModel, MAX_QTY, UNIT
 
 ROOT = Path(__file__).resolve().parents[2]
 VECTOR_DIR = ROOT / "test" / "diff" / "vectors"
 USER_COUNT = 5
 USERS = list(range(USER_COUNT))
 USER_NAMES = [str(i) for i in USERS]
-OPS_PER_SCENARIO = 220
+OPS_PER_SCENARIO = 240
 BASE_TIME = 1_800_000_000
+FEE_RATES = (0, 25, 100)
 
 
 def enrich(op, result):
@@ -26,6 +27,7 @@ def enrich(op, result):
         "filled": result.get("filled", 0),
         "resting": result.get("resting", 0),
         "payout": result.get("payout", 0),
+        "anyRevert": op.get("kind") == "create" and op.get("dataLength", 32) > 512,
     })
     return out
 
@@ -36,10 +38,11 @@ class Scenario:
         self.rng = random.Random(seed)
         self.count = 1 + seed % 3
         self.base = BASE_TIME + seed * 100_000
-        # Across the ten seeds this exercises both resolved outcomes and voids.
+        # Across twelve seeds this exercises both resolved outcomes and voids.
         self.outcomes = [((seed + i) % 3) for i in range(self.count)]  # 0=no, 1=yes, 2=void
         self.expiries = [self.base + 20_000 + i * 20_000 for i in range(self.count)]
-        self.model = BookModel(USER_NAMES, taker_fee_bps=100, now=self.base)
+        self.fee_bps = FEE_RATES[seed % len(FEE_RATES)]
+        self.model = BookModel(USER_NAMES, taker_fee_bps=self.fee_bps, now=self.base)
         self.ops = []
         self.checkpoints = []
         self.series = [
@@ -65,6 +68,8 @@ class Scenario:
     def bootstrap(self):
         for i in range(self.count):
             self.add("create", series=i, expiry=self.expiries[i], outcome=self.outcomes[i], at=self.base)
+        self.add("create", series=99, expiry=self.base + 20_000, outcome=0,
+                 dataLength=513, at=self.base)
         for u in USERS:
             self.add("deposit", user=u, amount=2_000 * UNIT, at=self.base)
         # Give each user enough paired inventory for held asks and merge coverage.
@@ -113,18 +118,62 @@ class Scenario:
                  fromHeld=False, tif="GTC", maxFills=1)
         self._cancel_open(sid)
 
-        # Self trade prevention cancels the resting ask, then allows the taker to rest.
-        ask = self.add("place", user=4, series=sid, side="Ask", tick=90, qty=2,
-                       fromHeld=False, tif="GTC", maxFills=0)
-        stp = self.add("place", user=4, series=sid, side="Bid", tick=95, qty=1,
-                       fromHeld=False, tif="GTC", maxFills=0)
-        if stp["ok"] and stp["resting"]:
-            self.add("cancel", user=4, orderId=stp["orderId"])
+        # POST_ONLY sees own orders before STP. An STP cancellation consumes maxFills.
+        self.add("place", user=4, series=sid, side="Ask", tick=90, qty=1,
+                 fromHeld=False, tif="GTC", maxFills=0)
+        other_ask = self.add("place", user=3, series=sid, side="Ask", tick=91, qty=1,
+                             fromHeld=False, tif="GTC", maxFills=0)
+        self.add("place", user=4, series=sid, side="Bid", tick=95, qty=1,
+                 fromHeld=False, tif="POST_ONLY", maxFills=0)
+        self.add("place", user=4, series=sid, side="Bid", tick=95, qty=1,
+                 fromHeld=False, tif="GTC", maxFills=1)
+        if other_ask["ok"] and other_ask["resting"]:
+            self.add("cancel", user=3, orderId=other_ask["orderId"])
+
+        self.curated_close_no(sid)
+        self.bounds_and_invalids(sid)
 
         # Split/merge every available market and cancel one level at a time.
         for sid in range(self.count):
             self.add("split", user=sid % USER_COUNT, series=sid, qty=2)
             self.add("merge", user=sid % USER_COUNT, series=sid, qty=1)
+
+    def curated_close_no(self, sid):
+        # Bid.fromHeld closes NO against both write and held-YES asks as taker.
+        self.add("place", user=1, series=sid, side="Ask", tick=42, qty=1,
+                 fromHeld=False, tif="GTC", maxFills=0)
+        self.add("place", user=0, series=sid, side="Bid", tick=50, qty=1,
+                 fromHeld=True, tif="GTC", maxFills=0)
+        self.add("place", user=2, series=sid, side="Ask", tick=40, qty=1,
+                 fromHeld=True, tif="GTC", maxFills=0)
+        self.add("place", user=0, series=sid, side="Bid", tick=45, qty=1,
+                 fromHeld=True, tif="GTC", maxFills=0)
+
+        # The same close-NO order can rest as maker against write/held Ask takers.
+        self.add("place", user=3, series=sid, side="Bid", tick=60, qty=1,
+                 fromHeld=True, tif="GTC", maxFills=0)
+        self.add("place", user=4, series=sid, side="Ask", tick=55, qty=1,
+                 fromHeld=False, tif="GTC", maxFills=0)
+        self.add("place", user=3, series=sid, side="Bid", tick=50, qty=1,
+                 fromHeld=True, tif="GTC", maxFills=0)
+        self.add("place", user=4, series=sid, side="Ask", tick=45, qty=1,
+                 fromHeld=True, tif="GTC", maxFills=0)
+
+        # Cancellation returns both the NO escrow and limit cash escrow.
+        close = self.add("place", user=0, series=sid, side="Bid", tick=10, qty=1,
+                         fromHeld=True, tif="GTC", maxFills=0)
+        if close["ok"] and close["resting"]:
+            self.add("cancel", user=0, orderId=close["orderId"])
+
+    def bounds_and_invalids(self, sid):
+        self.add("split", user=0, series=sid, qty=0)
+        self.add("split", user=0, series=sid, qty=MAX_QTY + 1)
+        self.add("merge", user=0, series=sid, qty=0)
+        self.add("merge", user=0, series=sid, qty=MAX_QTY + 1)
+        self.add("place", user=0, series=sid, side="Bid", tick=50, qty=0,
+                 fromHeld=False, tif="GTC", maxFills=0)
+        self.add("place", user=0, series=sid, side="Bid", tick=50, qty=MAX_QTY + 1,
+                 fromHeld=False, tif="GTC", maxFills=0)
 
     def _cancel_open(self, sid):
         for order in list(self.model._open_orders(sid)):
@@ -184,15 +233,19 @@ class Scenario:
                 if order.id != keep[sid]:
                     self.add("cancel", user=int(order.maker), orderId=order.id)
 
-        # At expiry, ready resolvers settle; unresolved ones revert until grace.
+        # Trading is closed at expiry, and even a ready resolver is too early then.
+        # Resolution becomes possible only after expiry; not-ready voids at grace.
         for sid in range(self.count):
-            at = self.expiries[sid]
+            expiry = self.expiries[sid]
             result = self.outcomes[sid]
-            self.add("resolve", series=sid, ready=(result != 2), yes=(result == 1), at=at)
-        for sid in range(self.count):
-            if self.outcomes[sid] == 2:
+            self.add("place", user=0, series=sid, side="Bid", tick=50, qty=1,
+                     fromHeld=False, tif="GTC", maxFills=0, at=expiry)
+            self.add("resolve", series=sid, ready=(result != 2), yes=(result == 1), at=expiry)
+            if result == 2:
                 self.add("resolve", series=sid, ready=False, yes=False,
-                         at=self.expiries[sid] + 2 * 24 * 3600)
+                         at=expiry + 2 * 24 * 3600)
+            else:
+                self.add("resolve", series=sid, ready=True, yes=(result == 1), at=expiry + 1)
 
         # Orders are not auto-cancelled when a series settles.
         for sid, oid in keep.items():
@@ -215,14 +268,14 @@ class Scenario:
         self.settle()
         if len(self.ops) < 200:
             raise AssertionError(f"scenario {self.seed} has only {len(self.ops)} operations")
-        # Settlement can push the scenario above the 220-operation target.
+        # Bootstrap/settlement can push scenarios above the nominal operation target.
         if not self.checkpoints or self.checkpoints[-1]["opIndex"] != len(self.ops) - 1:
             self._checkpoint()
         doc = {
             "format": 1,
             "seed": self.seed,
             "baseTimestamp": self.base,
-            "feeBps": self.model.taker_fee_bps,
+            "feeBps": self.fee_bps,
             "users": USERS,
             "userCount": len(USERS),
             "series": self.series,
@@ -238,7 +291,7 @@ class Scenario:
 
 def main():
     VECTOR_DIR.mkdir(parents=True, exist_ok=True)
-    for seed in range(10):
+    for seed in range(12):
         doc = Scenario(seed).build()
         path = VECTOR_DIR / f"scenario_{seed:02d}.json"
         path.write_text(json.dumps(doc, separators=(",", ":")) + "\n")

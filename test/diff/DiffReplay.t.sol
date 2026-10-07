@@ -29,6 +29,8 @@ contract DiffReplay is Test {
     function testReplayScenario07() public { _replayIfAvailable(7); }
     function testReplayScenario08() public { _replayIfAvailable(8); }
     function testReplayScenario09() public { _replayIfAvailable(9); }
+    function testReplayScenario10() public { _replayIfAvailable(10); }
+    function testReplayScenario11() public { _replayIfAvailable(11); }
 
     function _replayIfAvailable(uint256 index) internal {
         // This suite is intentionally buildable before the separately-owned Book lands.
@@ -116,8 +118,12 @@ contract DiffReplay is Test {
         uint256 sid = vm.parseJsonUint(json, string.concat(p, ".series"));
         uint256 outcome = vm.parseJsonUint(json, string.concat(p, ".outcome"));
         uint64 expiry = uint64(vm.parseJsonUint(json, string.concat(p, ".expiry")));
+        bytes memory data = abi.encode(outcome);
+        if (vm.parseJsonBool(json, string.concat(p, ".anyRevert"))) {
+            data = new bytes(vm.parseJsonUint(json, string.concat(p, ".dataLength")));
+        }
         (bool ok, bytes memory ret) = address(env.book).call(abi.encodeCall(
-            IMontionsBook.createSeries, (address(env.resolver), abi.encode(outcome), expiry)
+            IMontionsBook.createSeries, (address(env.resolver), data, expiry)
         ));
         _checkFromJson(json, p, scenario, i, ok, ret);
         if (ok) env.seriesIds[sid] = abi.decode(ret, (bytes32));
@@ -239,7 +245,8 @@ contract DiffReplay is Test {
             if (!ok) revert ReplayMismatch(scenario, i, "unexpected revert");
             return;
         }
-        if (ok) revert ReplayMismatch(scenario, i, "expected custom-error revert, call succeeded");
+        if (ok) revert ReplayMismatch(scenario, i, "expected revert, call succeeded");
+        if (vm.parseJsonBool(json, string.concat(p, ".anyRevert"))) return;
         bytes4 actual;
         if (ret.length >= 4) assembly ("memory-safe") { actual := mload(add(ret, 32)) }
         if (actual != _errorSelector(errorName)) {

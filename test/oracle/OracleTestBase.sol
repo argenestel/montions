@@ -34,7 +34,7 @@ abstract contract OracleTestBase is Test {
         pool = new SpotPool(address(base), address(usdc), address(this));
         hub = new OracleHub(address(this));
         assetId = keccak256("MON");
-        hub.registerAsset(assetId, address(pool));
+        hub.registerAsset(assetId, address(pool), 0);
     }
 
     function _seed(uint256 baseAmt, uint256 quoteAmt) internal {

@@ -9,9 +9,9 @@ contract MockResolver is IResolver {
         require(data.length == 32, "BAD_DATA");
     }
 
-    function resolve(bytes calldata data, uint64) external pure returns (bool ready, bool yes) {
+    function resolve(bytes calldata data, uint64 expiry) external view returns (bool ready, bool yes) {
         uint256 outcome = abi.decode(data, (uint256));
-        return (outcome != 2, outcome == 1);
+        return (block.timestamp > expiry && outcome != 2, outcome == 1);
     }
 
     function describe(bytes calldata, uint64) external pure returns (string memory) {
