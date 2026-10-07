@@ -37,6 +37,24 @@ def test_write_bid_fee_and_order_reserve():
     n.assert_invariants()
 
 
+def test_v01_legacy_fee_basis_and_close_no_rejection():
+    m = BookModel(["maker", "writer", "closer"], taker_fee_bps=100, mode="v01")
+    m.create_series(0, 10_000)
+    for user in ("maker", "writer", "closer"):
+        m.deposit(user, 10 * UNIT)
+
+    m.place_order("maker", 0, "Bid", 40, 1)
+    m.place_order("writer", 0, "Ask", 30, 1)
+    # v0.1 fees use the execution premium (40 ticks), unlike A4's 60-tick
+    # write collateral basis. 100 bps of 400,000 is 4,000 base units.
+    assert m.protocol_fees == 4_000
+
+    close_no = m.apply({"kind": "place", "user": "closer", "series": 0,
+                        "side": "Bid", "tick": 50, "qty": 1, "fromHeld": True})
+    assert close_no == {"ok": False, "error": "BadQty"}
+    m.assert_invariants()
+
+
 def test_held_ask_cancel_ioc_post_only_and_priority():
     m = BookModel(["a", "b", "c"], taker_fee_bps=0)
     m.create_series(0, 10_000)
@@ -89,6 +107,11 @@ def test_stp_cancellations_consume_max_fills_and_ids_are_sequential():
     assert immediate == {"orderId": 4, "filled": 1, "resting": 0}
     resting = m.place_order("v", 0, "Ask", 90, 1)
     assert resting["orderId"] == 5
+
+    # A non-crossing POST_ONLY order rests; it is not silently discarded.
+    post_only_resting = m.place_order("v", 0, "Bid", 20, 1, tif="POST_ONLY")
+    assert post_only_resting["resting"] == 1
+    m.cancel("v", post_only_resting["orderId"])
     m.assert_invariants()
 
 
@@ -220,6 +243,7 @@ def test_reverts_are_atomic_and_owner_cannot_touch_users():
 def run():
     tests = [
         test_write_bid_fee_and_order_reserve,
+        test_v01_legacy_fee_basis_and_close_no_rejection,
         test_held_ask_cancel_ioc_post_only_and_priority,
         test_stp_cancellations_consume_max_fills_and_ids_are_sequential,
         test_close_no_taker_and_maker_against_both_ask_kinds,

@@ -71,8 +71,11 @@ class BookModel:
     operation so modeled reverts have EVM transaction atomicity.
     """
 
-    def __init__(self, users=(), taker_fee_bps: int = 0, now: int = 0):
+    def __init__(self, users=(), taker_fee_bps: int = 0, now: int = 0, mode: str = "v02"):
         assert 0 <= taker_fee_bps <= 100
+        if mode not in ("v01", "v02"):
+            raise ValueError(f"unknown model mode: {mode}")
+        self.mode = mode
         self.accounts: dict[str, Account] = {str(u): Account() for u in users}
         self.tokens: dict[tuple[str, int, str], int] = defaultdict(int)
         self.series: dict[int, Series] = {}
@@ -161,7 +164,7 @@ class BookModel:
 
     def create_series(self, sid: int, expiry: int, data_length: int = 32):
         sid = int(sid)
-        if int(data_length) > MAX_DATA_LENGTH:
+        if self.mode == "v02" and int(data_length) > MAX_DATA_LENGTH:
             raise ModelRevert("DataTooLong")
         if sid in self.series:
             raise ModelRevert("SeriesExists")
@@ -189,7 +192,7 @@ class BookModel:
     def split(self, user: str, sid: int, qty: int):
         s = self._series_open(sid)
         self._check_before_expiry(s)
-        if not 1 <= int(qty) <= MAX_QTY:
+        if int(qty) < 1 or (self.mode == "v02" and int(qty) > MAX_QTY):
             raise ModelRevert("BadQty")
         cost = int(qty) * UNIT
         a = self.accounts[str(user)]
@@ -204,7 +207,7 @@ class BookModel:
 
     def merge(self, user: str, sid: int, qty: int):
         s = self._series_open(sid)
-        if not 1 <= int(qty) <= MAX_QTY:
+        if int(qty) < 1 or (self.mode == "v02" and int(qty) > MAX_QTY):
             raise ModelRevert("BadQty")
         y = self._user_token(user, sid, "YES")
         n = self._user_token(user, sid, "NO")
@@ -241,12 +244,14 @@ class BookModel:
         self._check_before_expiry(s)
         if not 1 <= int(tick) <= 99:
             raise ModelRevert("BadTick")
-        if not 1 <= int(qty) <= MAX_QTY:
+        if int(qty) < 1 or (self.mode == "v02" and int(qty) > MAX_QTY):
             raise ModelRevert("BadQty")
         if side not in ("Bid", "Ask"):
             raise ModelRevert("BadTick")
         if tif not in ("GTC", "IOC", "POST_ONLY"):
             raise ValueError(tif)
+        if side == "Bid" and from_held and self.mode == "v01":
+            raise ModelRevert("BadQty")
         probe = Order(0, str(user), int(sid), side, int(tick), bool(from_held),
                       int(qty), int(qty), self.now)
         # POST_ONLY checks the book before STP, including orders owned by the caller.
@@ -255,7 +260,7 @@ class BookModel:
 
         a = self.accounts[str(user)]
         escrow = self._escrow_cost(probe)
-        fee_reserve = self._fee(escrow) if not from_held else 0
+        fee_reserve = self._fee(escrow) if self.mode == "v02" and not from_held else 0
         if side == "Bid" and from_held:
             held = self._user_token(user, sid, "NO")
             if held < qty:
@@ -390,6 +395,14 @@ class BookModel:
                     a.cash += execution
                 taker_collateral_consumed += execution
 
+            if self.mode == "v01":
+                # v0.1 charges the legacy premium fee separately for each fill.
+                fee = self._fee(execution)
+                if a.cash < fee:
+                    raise ModelRevert("InsufficientCash")
+                a.cash -= fee
+                self.protocol_fees += fee
+
             left -= q
             incoming.qty -= q
             maker.qty -= q
@@ -400,7 +413,7 @@ class BookModel:
             if maker.qty == 0:
                 maker.open = False
 
-        fee = self._fee(taker_collateral_consumed)
+        fee = self._fee(taker_collateral_consumed) if self.mode == "v02" else 0
         if incoming.fee_reserve:
             reserve = incoming.fee_reserve
             assert reserve >= fee
@@ -419,7 +432,7 @@ class BookModel:
         if left:
             incoming.qty = left
             still_crosses = bool(self._opposite_sorted(incoming))
-            if tif == "GTC" and not still_crosses:
+            if tif in ("GTC", "POST_ONLY") and not still_crosses:
                 # Any unfilled fee reserve is refunded as soon as the order rests.
                 resting = left
             else:

@@ -43,7 +43,7 @@ contract DiffReplay is Test {
             vm.skip(true, "MontionsBook artifact is not present in this sandbox");
             return;
         }
-        _replay(index);
+        _replay(index, _isV02());
     }
 
     /// @dev External wrapper detects a missing artifact without compile-time imports.
@@ -51,8 +51,9 @@ contract DiffReplay is Test {
         return vm.getCode("MontionsBook.sol:MontionsBook");
     }
 
-    function _replay(uint256 scenarioIndex) internal {
-        string memory scenario = string.concat("scenario_", _twoDigits(scenarioIndex), ".json");
+    function _replay(uint256 scenarioIndex, bool v02) internal {
+        string memory suffix = v02 ? "_v02.json" : ".json";
+        string memory scenario = string.concat("scenario_", _twoDigits(scenarioIndex), suffix);
         string memory json = vm.readFile(string.concat("test/diff/vectors/", scenario));
         uint256 userCount = vm.parseJsonUint(json, ".userCount");
         uint256 seriesCount = vm.parseJsonUint(json, ".seriesCount");
@@ -118,15 +119,19 @@ contract DiffReplay is Test {
         uint256 sid = vm.parseJsonUint(json, string.concat(p, ".series"));
         uint256 outcome = vm.parseJsonUint(json, string.concat(p, ".outcome"));
         uint64 expiry = uint64(vm.parseJsonUint(json, string.concat(p, ".expiry")));
-        bytes memory data = abi.encode(outcome);
-        if (vm.parseJsonBool(json, string.concat(p, ".anyRevert"))) {
-            data = new bytes(vm.parseJsonUint(json, string.concat(p, ".dataLength")));
+        bytes memory data = vm.keyExistsJson(json, string.concat(p, ".readyAtExpiry"))
+            && vm.parseJsonBool(json, string.concat(p, ".readyAtExpiry"))
+            ? abi.encode(outcome, true)
+            : abi.encode(outcome);
+        if (vm.keyExistsJson(json, string.concat(p, ".dataLength"))) {
+            uint256 dataLength = vm.parseJsonUint(json, string.concat(p, ".dataLength"));
+            if (dataLength != 32) data = new bytes(dataLength);
         }
         (bool ok, bytes memory ret) = address(env.book).call(abi.encodeCall(
             IMontionsBook.createSeries, (address(env.resolver), data, expiry)
         ));
         _checkFromJson(json, p, scenario, i, ok, ret);
-        if (ok) env.seriesIds[sid] = abi.decode(ret, (bytes32));
+        if (ok && sid < env.seriesIds.length) env.seriesIds[sid] = abi.decode(ret, (bytes32));
     }
 
     function _deposit(string memory json, string memory p, string memory scenario, uint256 i, ReplayEnv memory env)
@@ -201,6 +206,14 @@ contract DiffReplay is Test {
     {
         uint256 u = vm.parseJsonUint(json, string.concat(p, ".user"));
         uint64 orderId = uint64(vm.parseJsonUint(json, string.concat(p, ".orderId")));
+        bool expectedOk = vm.parseJsonBool(json, string.concat(p, ".ok"));
+        if (orderId == 0) revert ReplayMismatch(scenario, i, "cancel target orderId must be nonzero");
+        if (expectedOk) {
+            IMontionsBook.OrderView memory target = env.book.orderInfo(orderId);
+            if (!target.open || target.maker != env.users[u]) {
+                revert ReplayMismatch(scenario, i, "cancel target is not an open order owned by user");
+            }
+        }
         vm.prank(env.users[u]);
         (bool ok, bytes memory ret) = address(env.book).call(abi.encodeCall(IMontionsBook.cancelOrder, (orderId)));
         _checkFromJson(json, p, scenario, i, ok, ret);
@@ -245,7 +258,11 @@ contract DiffReplay is Test {
             if (!ok) revert ReplayMismatch(scenario, i, "unexpected revert");
             return;
         }
-        if (ok) revert ReplayMismatch(scenario, i, "expected revert, call succeeded");
+        if (ok) {
+            revert ReplayMismatch(
+                scenario, i, string.concat("expected ", errorName, " revert, call succeeded")
+            );
+        }
         if (vm.parseJsonBool(json, string.concat(p, ".anyRevert"))) return;
         bytes4 actual;
         if (ret.length >= 4) assembly ("memory-safe") { actual := mload(add(ret, 32)) }
@@ -417,7 +434,22 @@ contract DiffReplay is Test {
     function _assertEq(
         string memory scenario, uint256 opIndex, uint256 actual, uint256 expected, string memory what
     ) internal pure {
-        if (actual != expected) revert ReplayMismatch(scenario, opIndex, string.concat(what, " mismatch"));
+        if (actual != expected) {
+            revert ReplayMismatch(
+                scenario,
+                opIndex,
+                string.concat(
+                    what, " mismatch: actual=", _toString(actual), ", expected=", _toString(expected)
+                )
+            );
+        }
+    }
+
+    function _isV02() internal view returns (bool) {
+        string memory mode = vm.envOr("DIFF_MODE", string("v01"));
+        if (_eq(mode, "v02")) return true;
+        if (_eq(mode, "v01")) return false;
+        revert(string.concat("unsupported DIFF_MODE: ", mode));
     }
 
     function _tif(string memory name) internal pure returns (IMontionsBook.TIF) {

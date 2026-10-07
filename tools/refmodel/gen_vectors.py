@@ -23,18 +23,20 @@ def enrich(op, result):
     out.update({
         "ok": result["ok"],
         "error": result.get("error", ""),
-        "orderId": result.get("orderId", 0),
+        # For cancel operations orderId is an input target, not a place result.
+        "orderId": result.get("orderId", op.get("orderId", 0)),
         "filled": result.get("filled", 0),
         "resting": result.get("resting", 0),
         "payout": result.get("payout", 0),
-        "anyRevert": op.get("kind") == "create" and op.get("dataLength", 32) > 512,
+        "anyRevert": op.get("kind") == "create" and op.get("dataLength", 32) > 512 and not result["ok"],
     })
     return out
 
 
 class Scenario:
-    def __init__(self, seed: int):
+    def __init__(self, seed: int, mode: str):
         self.seed = seed
+        self.mode = mode
         self.rng = random.Random(seed)
         self.count = 1 + seed % 3
         self.base = BASE_TIME + seed * 100_000
@@ -42,7 +44,7 @@ class Scenario:
         self.outcomes = [((seed + i) % 3) for i in range(self.count)]  # 0=no, 1=yes, 2=void
         self.expiries = [self.base + 20_000 + i * 20_000 for i in range(self.count)]
         self.fee_bps = FEE_RATES[seed % len(FEE_RATES)]
-        self.model = BookModel(USER_NAMES, taker_fee_bps=self.fee_bps, now=self.base)
+        self.model = BookModel(USER_NAMES, taker_fee_bps=self.fee_bps, now=self.base, mode=mode)
         self.ops = []
         self.checkpoints = []
         self.series = [
@@ -52,7 +54,21 @@ class Scenario:
         ]
 
     def add(self, kind, **fields):
+        if kind == "cancel":
+            order_id = int(fields.get("orderId", 0))
+            order = self.model.orders.get(order_id)
+            if order_id == 0 or order is None or not order.open or order.maker != str(fields.get("user")):
+                raise AssertionError(
+                    f"scenario {self.seed}, op {len(self.ops)}: cancel must target a live order owned by user"
+                )
+        features = fields.pop("features", [])
+        if kind == "place" and self.fee_bps:
+            features = sorted(set(features) | {"A4"})
+        if kind == "place" and fields.get("side") == "Bid" and fields.get("fromHeld"):
+            features = sorted(set(features) | {"A3"})
         op = {"kind": kind, "at": fields.pop("at", self.model.now), **fields}
+        if features:
+            op["v02Features"] = features
         result = self.model.apply(op)
         self.ops.append(enrich(op, result))
         if len(self.ops) > 0 and len(self.ops) % 10 == 0:
@@ -67,9 +83,13 @@ class Scenario:
 
     def bootstrap(self):
         for i in range(self.count):
-            self.add("create", series=i, expiry=self.expiries[i], outcome=self.outcomes[i], at=self.base)
+            fields = {"series": i, "expiry": self.expiries[i], "outcome": self.outcomes[i], "at": self.base}
+            if self.seed == 0 and i == 0:
+                # Force the resolver ready at the exact expiry boundary to probe A6.
+                fields["readyAtExpiry"] = True
+            self.add("create", **fields)
         self.add("create", series=99, expiry=self.base + 20_000, outcome=0,
-                 dataLength=513, at=self.base)
+                 dataLength=513, at=self.base, features=["A7"])
         for u in USERS:
             self.add("deposit", user=u, amount=2_000 * UNIT, at=self.base)
         # Give each user enough paired inventory for held asks and merge coverage.
@@ -130,7 +150,8 @@ class Scenario:
         if other_ask["ok"] and other_ask["resting"]:
             self.add("cancel", user=3, orderId=other_ask["orderId"])
 
-        self.curated_close_no(sid)
+        if self.mode == "v02":
+            self.curated_close_no(sid)
         self.bounds_and_invalids(sid)
 
         # Split/merge every available market and cancel one level at a time.
@@ -167,13 +188,13 @@ class Scenario:
 
     def bounds_and_invalids(self, sid):
         self.add("split", user=0, series=sid, qty=0)
-        self.add("split", user=0, series=sid, qty=MAX_QTY + 1)
+        self.add("split", user=0, series=sid, qty=MAX_QTY + 1, features=["A7"])
         self.add("merge", user=0, series=sid, qty=0)
-        self.add("merge", user=0, series=sid, qty=MAX_QTY + 1)
+        self.add("merge", user=0, series=sid, qty=MAX_QTY + 1, features=["A7"])
         self.add("place", user=0, series=sid, side="Bid", tick=50, qty=0,
                  fromHeld=False, tif="GTC", maxFills=0)
         self.add("place", user=0, series=sid, side="Bid", tick=50, qty=MAX_QTY + 1,
-                 fromHeld=False, tif="GTC", maxFills=0)
+                 fromHeld=False, tif="GTC", maxFills=0, features=["A7"])
 
     def _cancel_open(self, sid):
         for order in list(self.model._open_orders(sid)):
@@ -292,13 +313,14 @@ class Scenario:
 def main():
     VECTOR_DIR.mkdir(parents=True, exist_ok=True)
     for seed in range(12):
-        doc = Scenario(seed).build()
-        path = VECTOR_DIR / f"scenario_{seed:02d}.json"
-        path.write_text(json.dumps(doc, separators=(",", ":")) + "\n")
-        size = path.stat().st_size
-        if size >= 300_000:
-            raise SystemExit(f"{path} exceeds the 300 KB limit: {size}")
-        print(f"{path}: {len(doc['ops'])} ops, {len(doc['checkpoints'])} checkpoints, {size} bytes")
+        for mode, suffix in (("v01", ""), ("v02", "_v02")):
+            doc = Scenario(seed, mode).build()
+            path = VECTOR_DIR / f"scenario_{seed:02d}{suffix}.json"
+            path.write_text(json.dumps(doc, separators=(",", ":")) + "\n")
+            size = path.stat().st_size
+            if size >= 300_000:
+                raise SystemExit(f"{path} exceeds the 300 KB limit: {size}")
+            print(f"{path}: {len(doc['ops'])} ops, {len(doc['checkpoints'])} checkpoints, {size} bytes")
 
 
 if __name__ == "__main__":
