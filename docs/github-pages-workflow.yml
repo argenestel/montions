@@ -1,0 +1,41 @@
+# Publishes the static frontend to GitHub Pages. The app is a static page that reads the chain over RPC (no backend).
+# One-time setup: repo Settings -> Pages -> Source: "GitHub Actions". The deployment manifest must be committed at app/public/deployment.json.
+name: Deploy app to GitHub Pages
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", "sdk/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+permissions: { contents: read, pages: write, id-token: write }
+concurrency: { group: pages, cancel-in-progress: true }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: |
+            app/pnpm-lock.yaml
+            sdk/pnpm-lock.yaml }
+      - name: Install SDK deps
+        run: pnpm install --frozen-lockfile
+        working-directory: sdk
+      - name: Install app deps
+        run: pnpm install --frozen-lockfile
+        working-directory: app
+      - name: Refuse to publish without a deployment manifest
+        run: test -f app/public/deployment.json || (echo "app/public/deployment.json is missing — deploy first and commit the manifest" && exit 1)
+      - name: Build
+        run: pnpm exec vite build --base "/${{ github.event.repository.name }}/"
+        working-directory: app
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: app/dist }
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: "${{ steps.d.outputs.page_url }}" }
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4

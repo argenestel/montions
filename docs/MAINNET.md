@@ -11,7 +11,7 @@
 | Pyth core | `0x2880aB155794e7179c9eE2e38200202908C17B43` — upgradable proxy; implementation has `parsePriceFeedUpdatesUnique`; `getValidTimePeriod()` = 60 |
 | Feeds | MON/USD `0x3149…6cd1`, BTC/USD `0xe62d…5b43`, ETH/USD `0xff61…0ace` — all exist and are live |
 | Multicall3 | `0xcA11bde05977b3631167028862bE2a173976CA11` (predeployed) |
-| Contract size | Monad allows 128 KB; the Book is ~29 KB (above Ethereum's 24 KB limit — this protocol does not deploy on chains with the 24 KB limit) |
+| Contract size | Monad allows 128 KB; the Book is ~31 KB (above Ethereum's 24 KB limit — this protocol does not deploy on chains with the 24 KB limit). Foundry scripts need `--disable-code-size-limit` because forge simulates with the 24 KB limit. |
 
 ## Findings from the mainnet-fork rehearsal (`scripts/fork-rehearsal.sh`)
 1. **Hermes needs an API key.** Pyth's Core upgrade (completed 2026-08-26) made Hermes require `Authorization: Bearer <key>`; the public endpoint returns 401. Settlement keepers need `HERMES_API_KEY` (free trial, then paid). Settlement stays **permissionless** — anyone with a key can settle — and if nobody does, markets **void 50/50** after 2 days (verified on the fork).
@@ -28,13 +28,13 @@ export OWNER_SAFE=0x<safe-multisig>                       # final owner (>= 2-of
 export COLLATERAL_CAP_USDC=5000 SERIES_POOL_CAP_USDC=250   # start tiny; raise in stages
 export CONFIRM_MAINNET=I_UNDERSTAND_THIS_IS_UNAUDITED_AND_USES_REAL_FUNDS
 # 1. deploy (Book is deployed PAUSED). Use a Foundry keystore, never a key on the command line:
-forge script script/DeployProd.s.sol:DeployProd --rpc-url $RPC --account <keystore> --sender <addr> --broadcast --slow --verify
+forge script script/DeployProd.s.sol:DeployProd --rpc-url $RPC --account <keystore> --sender <addr> --broadcast --slow --disable-code-size-limit --verify
 CHAIN_ID=143 RPCS=https://rpc1.monad.xyz,https://rpc2.monad.xyz node scripts/finish-manifest.mjs     # writes deployments/143.json
 # 2. verify against the live chain (must pass, Book must be paused)
 scripts/verify-deployment.sh deployments/143.json --expect-paused
 # 3. Safe executes requestOwnershipHandover() on Book, PythOracle, PythResolver, TimelockResolver, Quoter (and Vault)
 # 4. complete the handover from the deployer
-CONTRACTS=<book>,<oracle>,<resolver>,<timelock>,<quoter> NEW_OWNER=$OWNER_SAFE forge script script/HandoverOwnership.s.sol --rpc-url $RPC --account <keystore> --broadcast --slow
+CONTRACTS=<book>,<oracle>,<resolver>,<timelock>,<quoter> NEW_OWNER=$OWNER_SAFE forge script script/HandoverOwnership.s.sol --rpc-url $RPC --account <keystore> --broadcast --slow --disable-code-size-limit
 # 5. Safe: setPaused(false) only after verify passes with --expect-paused AND the owner is the Safe
 scripts/verify-deployment.sh deployments/143.json --expect-unpaused
 # 6. seed the series ladder and run the settlement keeper (KEEPER_MODE=pyth, HERMES_API_KEY set)
