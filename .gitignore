@@ -16,3 +16,7 @@ app/public/deployment.json
 deployments/*.contracts.json
 deployments/*.meta.json
 .dev/
+# Fork/dry-run manifests contain fake addresses. After a REAL deployment, commit the manifest deliberately with `git add -f`.
+deployments/10143.json
+deployments/143.json
+deployments/31337.json

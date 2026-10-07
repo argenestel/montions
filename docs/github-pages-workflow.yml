@@ -1,3 +1,4 @@
+# COPY THIS FILE to .github/workflows/pages.yml (the push token used by the build agent has no `workflow` scope, so it could not create it).
 # Publishes the static frontend to GitHub Pages. The app is a static page that reads the chain over RPC (no backend).
 # One-time setup: repo Settings -> Pages -> Source: "GitHub Actions". The deployment manifest must be committed at app/public/deployment.json.
 name: Deploy app to GitHub Pages
