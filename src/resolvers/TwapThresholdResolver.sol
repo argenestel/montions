@@ -7,6 +7,11 @@ import {Ownable} from "solady/auth/Ownable.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {ResolverFormat} from "./ResolverFormat.sol";
 
+/// @notice Optional liquidity guard exposed by the trusted oracle.
+interface IOracleHealth {
+    function isHealthy(bytes32 assetId) external view returns (bool);
+}
+
 /// @title TwapThresholdResolver
 /// @notice Resolves "TWAP of asset over the `window` seconds ending at `expiry` is >= (or <) strike".
 /// @dev data = abi.encode(address oracle, bytes32 assetId, uint256 strikeWad, bool above, uint32 window).
@@ -22,17 +27,23 @@ contract TwapThresholdResolver is IResolver, Ownable {
     error InvalidWindow(uint32 window);
     error InvalidExpiry(uint64 expiry);
     error ZeroOracle();
+    error UntrustedOracle();
+    error UnhealthyAsset(bytes32 assetId);
 
     uint32 public constant MIN_WINDOW = 30;
     uint32 public constant MAX_WINDOW = 3600;
+    /// @notice The only oracle accepted when creating a market.
+    address public immutable trustedOracle;
 
     /// @notice assetId => display symbol (cosmetic, used only by `describe`).
     mapping(bytes32 => string) public symbolOf;
 
     event SymbolSet(bytes32 indexed assetId, string symbol);
 
-    constructor() {
-        _initializeOwner(msg.sender);
+    constructor(address trustedOracle_, address owner_) {
+        if (trustedOracle_ == address(0)) revert ZeroOracle();
+        trustedOracle = trustedOracle_;
+        _initializeOwner(owner_);
     }
 
     /// @notice Set the display symbol for an assetId (owner only; cosmetic).
@@ -63,8 +74,10 @@ contract TwapThresholdResolver is IResolver, Ownable {
 
     /// @inheritdoc IResolver
     function validate(bytes calldata data, uint64 expiry) external view {
+        if (data.length > 512) revert InvalidData();
         (address oracle, bytes32 assetId, uint256 strikeWad,, uint32 window) = decode(data);
         if (oracle == address(0)) revert ZeroOracle();
+        if (oracle != trustedOracle) revert UntrustedOracle();
         if (strikeWad == 0) revert InvalidStrike();
         if (window < MIN_WINDOW || window > MAX_WINDOW) revert InvalidWindow(window);
         // The Book performs its own duration bounds, while the resolver must at
@@ -72,6 +85,11 @@ contract TwapThresholdResolver is IResolver, Ownable {
         // subtraction by the oracle's TWAP implementation.
         if (uint256(expiry) <= block.timestamp || expiry < window) revert InvalidExpiry(expiry);
         if (!IPriceOracle(oracle).assetExists(assetId)) revert IPriceOracle.UnknownAsset(assetId);
+        // Older oracles may omit this optional guard. Bound its gas so a
+        // reverting or gas-consuming implementation cannot block validation.
+        try IOracleHealth(oracle).isHealthy{gas: 30_000}(assetId) returns (bool healthy) {
+            if (!healthy) revert UnhealthyAsset(assetId);
+        } catch {}
     }
 
     /// @inheritdoc IResolver

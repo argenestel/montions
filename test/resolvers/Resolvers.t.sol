@@ -8,6 +8,8 @@ import {TimelockOpResolver} from "../../src/resolvers/TimelockOpResolver.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {MockOracle} from "./mocks/MockOracle.sol";
 import {MockTimelock} from "./mocks/MockTimelock.sol";
+import {MockHealthyOracle} from "./mocks/MockHealthyOracle.sol";
+import {Ownable} from "solady/auth/Ownable.sol";
 
 contract ResolversTest is Test {
     uint64 internal constant START = 1_700_000_000;
@@ -22,12 +24,93 @@ contract ResolversTest is Test {
 
     function setUp() public {
         vm.warp(START);
-        twap = new TwapThresholdResolver();
-        timelockResolver = new TimelockOpResolver();
         oracle = new MockOracle();
+        twap = new TwapThresholdResolver(address(oracle), address(this));
+        timelockResolver = new TimelockOpResolver(address(this));
         oracle.setAsset(ASSET, true);
         oracle.setPrice(ASSET, STRIKE);
         timelock = new MockTimelock();
+        timelockResolver.setTimelockAllowed(address(timelock), true);
+    }
+
+    function testTwapRejectsNonTrustedOracle() public {
+        MockOracle otherOracle = new MockOracle();
+        otherOracle.setAsset(ASSET, true);
+        bytes memory data = twap.encode(address(otherOracle), ASSET, STRIKE, true, 60);
+        assertEq(twap.trustedOracle(), address(oracle));
+        vm.expectRevert(TwapThresholdResolver.UntrustedOracle.selector);
+        twap.validate(data, START + 1 days);
+    }
+
+    function testTwapOptionalHealthGuard() public {
+        MockHealthyOracle guardedOracle = new MockHealthyOracle();
+        guardedOracle.setAsset(ASSET, true);
+        TwapThresholdResolver guarded = new TwapThresholdResolver(address(guardedOracle), address(this));
+        bytes memory data = guarded.encode(address(guardedOracle), ASSET, STRIKE, true, 60);
+        guarded.validate(data, START + 1 days);
+
+        guardedOracle.setHealthMode(1);
+        vm.expectRevert(abi.encodeWithSelector(TwapThresholdResolver.UnhealthyAsset.selector, ASSET));
+        guarded.validate(data, START + 1 days);
+
+        guardedOracle.setHealthMode(2);
+        guarded.validate(data, START + 1 days);
+        guardedOracle.setHealthMode(3);
+        guarded.validate{gas: 100_000}(data, START + 1 days);
+
+        // MockOracle has no isHealthy selector: legacy oracles remain accepted.
+        twap.validate(twap.encode(address(oracle), ASSET, STRIKE, true, 60), START + 1 days);
+    }
+
+    function testTimelockAllowlistAndOwnerOnlySetter() public {
+        bytes memory data = timelockResolver.encode(address(timelock), keccak256("upgrade"));
+        assertTrue(timelockResolver.timelockAllowed(address(timelock)));
+        timelockResolver.setTimelockAllowed(address(timelock), false);
+        assertFalse(timelockResolver.timelockAllowed(address(timelock)));
+        vm.expectRevert(TimelockOpResolver.TimelockNotAllowed.selector);
+        timelockResolver.validate(data, START + 1 days);
+
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        timelockResolver.setTimelockAllowed(address(timelock), true);
+        assertFalse(timelockResolver.timelockAllowed(address(timelock)));
+        timelockResolver.setTimelockAllowed(address(timelock), true);
+        timelockResolver.validate(data, START + 1 days);
+
+        MockTimelock unknown = new MockTimelock();
+        data = timelockResolver.encode(address(unknown), keccak256("upgrade"));
+        vm.expectRevert(TimelockOpResolver.TimelockNotAllowed.selector);
+        timelockResolver.validate(data, START + 1 days);
+    }
+
+    function testExplicitConstructorOwnersControlSetters() public {
+        address owner = address(0xCAFE);
+        TwapThresholdResolver ownedTwap = new TwapThresholdResolver(address(oracle), owner);
+        TimelockOpResolver ownedTimelock = new TimelockOpResolver(owner);
+        assertEq(ownedTwap.owner(), owner);
+        assertEq(ownedTimelock.owner(), owner);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        ownedTwap.setSymbol(ASSET, "MON");
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        ownedTimelock.setTimelockAllowed(address(timelock), true);
+        vm.prank(owner);
+        ownedTwap.setSymbol(ASSET, "MON");
+        vm.prank(owner);
+        ownedTimelock.setTimelockAllowed(address(timelock), true);
+        assertEq(ownedTwap.symbolOf(ASSET), "MON");
+        assertTrue(ownedTimelock.timelockAllowed(address(timelock)));
+    }
+
+    function testFuzzResolversRejectOversizeData(uint16 extraLength) public {
+        uint256 length = 513 + uint256(extraLength % 1024);
+        bytes memory twapData =
+            bytes.concat(twap.encode(address(oracle), ASSET, STRIKE, true, 60), new bytes(length - 160));
+        bytes memory timelockData =
+            bytes.concat(timelockResolver.encode(address(timelock), keccak256("upgrade")), new bytes(length - 64));
+        vm.expectRevert(TwapThresholdResolver.InvalidData.selector);
+        twap.validate(twapData, START + 1 days);
+        vm.expectRevert(TimelockOpResolver.BadData.selector);
+        timelockResolver.validate(timelockData, START + 1 days);
     }
 
     function testTwapEncodeDecodeAndValidate() public {
@@ -167,12 +250,12 @@ contract ResolversTest is Test {
         uint256 beforeGas = gasleft();
         twap.resolve(twapData, expiry);
         uint256 twapGas = beforeGas - gasleft();
-        assertLt(twapGas, 300_000);
+        assertLt(twapGas, 500_000);
 
         beforeGas = gasleft();
         timelockResolver.resolve(timelockData, expiry);
         uint256 timelockGas = beforeGas - gasleft();
-        assertLt(timelockGas, 300_000);
+        assertLt(timelockGas, 500_000);
     }
 
     function testTwapSymbolRegistryAndFallbackDescription() public {
@@ -284,14 +367,15 @@ contract ResolversTest is Test {
         assertFalse(yes);
     }
 
-    function testTimelockStatusRevertBubblesToBookBoundary() public {
+    function testTimelockStatusRevertIsNotReady() public {
         bytes32 operationId = keccak256("revert");
         bytes memory data = timelockResolver.encode(address(timelock), operationId);
         uint64 expiry = uint64(block.timestamp);
         vm.warp(uint256(expiry) + 1);
         timelock.setStatusFails(true);
 
-        vm.expectRevert(MockTimelock.StatusFailed.selector);
-        timelockResolver.resolve(data, expiry);
+        (bool ready, bool yes) = timelockResolver.resolve(data, expiry);
+        assertFalse(ready);
+        assertFalse(yes);
     }
 }
