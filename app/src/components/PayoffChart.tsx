@@ -32,18 +32,21 @@ export function PayoffChart(props: { strike: number; spot: number; payout: numbe
       }}
       onMouseLeave={() => setHover(null)}>
       <line x1={padL} x2={W - padR} y1={y(0)} y2={y(0)} stroke="rgba(255,255,255,.18)" />
-      {bars.map((b, i) => {
-        const top = Math.min(y(b.v), y(0)), h = Math.abs(y(b.v) - y(0));
-        return <rect key={i} x={x(b.px) - bw / 2} y={top} width={bw} height={Math.max(2, h)} rx={3}
-          fill={b.v >= 0 ? "rgba(111,240,176,.55)" : "rgba(255,123,146,.5)"} opacity={hover != null && Math.abs(b.px - hp) > (hi - lo) / 44 ? 0.55 : 1} />;
-      })}
+      <g key={`${strike}-${yes}`}>
+        {bars.map((b, i) => {
+          const top = Math.min(y(b.v), y(0)), h = Math.max(2, Math.abs(y(b.v) - y(0)));
+          return <rect key={i} className={`bar ${b.v >= 0 ? "pos" : "neg"}`} x={x(b.px) - bw / 2} width={bw} rx={3}
+            style={{ y: top, height: h, animationDelay: `${i * 7}ms`, opacity: hover != null && Math.abs(b.px - hp) > (hi - lo) / 44 ? 0.5 : 1 }}
+            fill={b.v >= 0 ? "rgba(111,240,176,.55)" : "rgba(255,123,146,.5)"} />;
+        })}
+      </g>
       <line x1={x(strike)} x2={x(strike)} y1={padT - 6} y2={H - padB + 4} stroke="#836ef9" strokeDasharray="4 4" />
       <text x={x(strike)} y={12} textAnchor="middle" style={{ fill: "#b4a8ff" }}>strike {price(strike)}</text>
       <line x1={x(spot)} x2={x(spot)} y1={padT + 8} y2={H - padB} stroke="rgba(255,255,255,.4)" strokeDasharray="2 3" />
       <text x={x(spot)} y={H - 8} textAnchor="middle">now {price(spot)}</text>
       <text x={padL} y={H - 8}>{price(lo)}</text>
       <text x={W - padR} y={H - 8} textAnchor="end">{price(hi)}</text>
-      <g transform={`translate(${Math.min(Math.max(x(hp), 70), W - 70)},${padT + 2})`}>
+      <g className="tip" style={{ transform: `translate(${Math.min(Math.max(x(hp), 70), W - 70)}px,${padT + 2}px)` }}>
         <rect x={-62} y={-2} width={124} height={22} rx={11} fill="#0f0d1c" stroke="rgba(131,110,249,.4)" />
         <text textAnchor="middle" y={13} style={{ fill: pnl(hp) >= 0 ? "#6ff0b0" : "#ff7b92", fontWeight: 600 }}>
           {price(hp)} → {pnl(hp) >= 0 ? "+" : "−"}{usd(Math.abs(pnl(hp)))}

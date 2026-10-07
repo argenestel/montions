@@ -40,7 +40,7 @@ export default function App() {
     <ApiCtx.Provider value={api}>
       <div className="app">
         <Header info={info} account={account} onConnect={connect} onFaucet={async () => { await api.faucet(); await refresh(); }} />
-        <main>
+        <main key={tab} className="view">
           {tab === "trade" && <TradeView account={account} onNeedConnect={connect} />}
           {tab === "positions" && <PositionsView account={account} onChanged={refresh} />}
           {tab === "vault" && <VaultView account={account} onChanged={refresh} />}

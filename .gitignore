@@ -10,3 +10,6 @@ broadcast/
 dist/
 reference/
 coverage/
+app/public/deployment.json
+.dev/
+app/public/deployment.json

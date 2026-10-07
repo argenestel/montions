@@ -23,7 +23,7 @@ export function ProofView() {
         <dl className="kv">
           {(info?.contracts ?? []).map((c) => (
             <div key={c.name}><dt>{c.name} <span className="subnote">· {c.role}</span></dt>
-              <dd>{info?.mock ? <span className="addr">{c.address}</span> : <a className="addr" href={`${info?.explorer}/address/${c.address}`} target="_blank" rel="noreferrer">{c.address}</a>}</dd></div>
+              <dd>{info?.mock || !info?.explorer ? <span className="addr">{c.address}</span> : <a className="addr" href={`${info?.explorer}/address/${c.address}`} target="_blank" rel="noreferrer">{c.address}</a>}</dd></div>
           ))}
         </dl>
       </div>

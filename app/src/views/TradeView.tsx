@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AccountView, Quote, SeriesView } from "../api/types";
-import { BookLadder } from "../components/BookLadder";
+import { BookLadder, BookSkeleton } from "../components/BookLadder";
+import { Num, Skel } from "../components/Motion";
 import { ConfirmSheet } from "../components/ConfirmSheet";
 import { PayoffChart } from "../components/PayoffChart";
 import { price, pct, usd, whenText, untilText, durationLabel } from "../lib/format";
@@ -31,16 +32,18 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
   useEffect(() => {
     if (!expiries.length) return;
     if (expiry === undefined || !expiries.includes(expiry)) {
-      const day = expiries.find((e) => e - now > 20 * 3600);
-      setExpiry(day ?? expiries[expiries.length - 1]);
+      const liquid = (e: number) => open.some((x) => x.expiry === e && (above ? x.askQty > 0 : x.bidQty > 0));
+      const day = expiries.find((e) => e - now > 20 * 3600 && liquid(e));
+      setExpiry(day ?? expiries.find(liquid) ?? expiries.find((e) => e - now > 20 * 3600) ?? expiries[expiries.length - 1]);
     }
   }, [expiries, expiry]);
   const atExpiry = useMemo(() => open.filter((s) => s.expiry === expiry).sort((a, b) => a.strike - b.strike), [open, expiry]);
   useEffect(() => {
     if (!atExpiry.length) return;
     if (strike === undefined || !atExpiry.some((s) => s.strike === strike)) {
-      // default to the strike whose chance of paying is closest to 30%
-      setStrike(nearest(atExpiry, (s) => (above ? s.fairProb : 1 - s.fairProb), 0.3)?.strike);
+      // default to the strike (with resting liquidity if any) whose chance of paying is closest to 30%
+      const liquid = atExpiry.filter((s) => (above ? s.askQty > 0 : s.bidQty > 0));
+      setStrike(nearest(liquid.length ? liquid : atExpiry, (s) => (above ? s.fairProb : 1 - s.fairProb), 0.3)?.strike);
     }
   }, [atExpiry, strike, spot, above]);
 
@@ -119,7 +122,7 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
               </div>
             )}
           </PillPopover>{" "}
-          <PillPopover pill={(o, t) => <button className={`pill yes ${o ? "open" : ""}`} onClick={t}>{strike ? price(strike) : "…"}<small>{strikePct >= 0 ? "↑" : "↓"}{Math.abs(strikePct * 100).toFixed(0)}%</small><span className="chev">▾</span></button>}>
+          <PillPopover pill={(o, t) => strike ? <button className={`pill yes ${o ? "open" : ""}`} onClick={t}>{price(strike)}<small>{strikePct >= 0 ? "↑" : "↓"}{Math.abs(strikePct * 100).toFixed(0)}%</small><span className="chev">▾</span></button> : <button className="pill yes loading" aria-busy="true"><Skel w="2.6em" h=".62em" r={999} /></button>}>
             {(close) => (
               <div>
                 <div className="pop-title">{sym} reference price {price(spot)}</div>
@@ -135,7 +138,7 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
             )}
           </PillPopover>
           <span className="w"> by </span>
-          <PillPopover align="right" pill={(o, t) => <button className={`pill blue ${o ? "open" : ""}`} onClick={t}>{expiry ? whenText(expiry).replace(/,/g, "") : "…"}<span className="chev">▾</span></button>}>
+          <PillPopover align="right" pill={(o, t) => expiry ? <button className={`pill blue ${o ? "open" : ""}`} onClick={t}>{whenText(expiry).replace(/,/g, "")}<span className="chev">▾</span></button> : <button className="pill blue loading" aria-busy="true"><Skel w="4.6em" h=".62em" r={999} /></button>}>
             {(close) => (
               <div>
                 <div className="pop-title">Pick an expiry (60s TWAP at that moment decides)</div>
@@ -156,13 +159,13 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
         </h1>
 
         <div className="costline">
-          <div className="costbox"><span className="lbl">It costs</span><span className="val">{selected ? usd(cost, cost < 100 ? 2 : 0) : "—"}</span></div>
-          <div className="chancebox"><b>{pct(chance)}</b> chance it happens <span style={{ color: "var(--faint)" }}>· model</span></div>
+          <div className="costbox"><span className="lbl">It costs</span><span className="val">{selected && quote ? <Num value={cost} format={(n) => usd(n, n < 100 ? 2 : 0)} /> : <Skel w={104} h={30} r={10} />}</span></div>
+          <div className="chancebox"><b>{selected ? <Num value={chance * 100} format={(n) => `${Math.round(n)}%`} /> : <Skel w={34} h={14} />}</b> chance it happens <span style={{ color: "var(--faint)" }}>· model</span></div>
         </div>
         <div className="subnote">
-          {quote && quote.filled > 0 ? <>Fills against the onchain book · avg {quote.avgTick}¢ per $1 · you win {usd(profit)} if it happens, lose {usd(cost)} if not.</> : "Loading book…"}
+          {!quote ? "Reading the onchain book…" : quote.filled > 0 ? <>Fills against the onchain book · avg {quote.avgTick}¢ per $1 · you win {usd(profit)} if it happens, lose {usd(cost)} if not.</> : "No resting orders on this market yet — try another strike or expiry."}
         </div>
-        {quote && !quote.complete && <div className="warnline" style={{ marginTop: 6 }}>Only {quote.filled.toLocaleString()} of {contracts.toLocaleString()} contracts are available at a sane price — lower the amount.</div>}
+        {quote && quote.filled > 0 && !quote.complete && <div className="warnline" style={{ marginTop: 6 }}>Only {quote.filled.toLocaleString()} of {contracts.toLocaleString()} contracts are available right now — lower the amount to fill completely.</div>}
 
         <div className="cta-row">
           <button className="cta" disabled={!selected || !quote || quote.filled === 0} onClick={buy}>
@@ -171,19 +174,17 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
           {!props.account?.address && <span className="subnote">Connect a wallet to trade (testnet tUSDC faucet included).</span>}
         </div>
 
-        {selected && quote && (
-          <div className="chartwrap card">
-            <h3>Profit / loss at expiry <span className="hint">hover to inspect</span></h3>
-            <PayoffChart strike={selected.strike} spot={spot} payout={payout} cost={cost} yes={above} />
-          </div>
-        )}
+        <div className="chartwrap card">
+          <h3>Profit / loss at expiry <span className="hint">hover to inspect</span></h3>
+          {selected && quote ? <PayoffChart strike={selected.strike} spot={spot} payout={payout} cost={cost} yes={above} /> : <Skel w="100%" h={210} r={14} />}
+        </div>
       </section>
 
       <aside>
         <div className="card">
           <h3>Live orderbook <span className="hint">100% onchain CLOB</span></h3>
           {depth ? <BookLadder bids={depth.bids} asks={depth.asks} fairTick={selected ? Math.round(selected.fairProb * 100) : undefined} lastTick={selected?.lastTick}
-            highlight={above && quote?.worstTick ? { side: "ask", worst: quote.worstTick } : undefined} /> : <div className="empty">…</div>}
+            highlight={above && quote?.worstTick ? { side: "ask", worst: quote.worstTick } : undefined} /> : <BookSkeleton />}
           <div className="onchain-note">ⓘ Orders match by price-time priority inside <span className="mono">MontionsBook</span>. No matcher, no indexer, no signed quotes.</div>
         </div>
         <div className="card">

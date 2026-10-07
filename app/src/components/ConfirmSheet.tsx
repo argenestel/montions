@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { Quote, SeriesView, Step, TxResult } from "../api/types";
 import { price, usd, whenText } from "../lib/format";
 import { useApi } from "../lib/hooks";
@@ -27,7 +28,7 @@ export function ConfirmSheet(props: { series: SeriesView; sym: string; spot: num
     ? [{ t: `Ends above ${price(series.strike)}`, a: profit, win: true }, { t: `Ends at ${price(lo)}`, a: -cost, win: false }, { t: `Ends below ${price(lo * 0.9)}`, a: -cost, win: false }]
     : [{ t: `Ends below ${price(series.strike)}`, a: profit, win: true }, { t: `Ends at ${price(hi)}`, a: -cost, win: false }, { t: `Ends above ${price(hi * 1.1)}`, a: -cost, win: false }];
 
-  return (
+  return createPortal(
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) props.onClose(); }}>
       <div className="sheet">
         <div className="card">
@@ -68,6 +69,7 @@ export function ConfirmSheet(props: { series: SeriesView; sym: string; spot: num
             </>
           ) : res.ok ? (
             <div className="success">
+              <svg className="check-draw" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" /><path d="M19 33l9 9 17-19" /></svg>
               <div className="subnote">Filled onchain</div>
               <div className="big">{res.filled.toLocaleString()} contracts</div>
               <p className="subnote">Paid {usd(res.cost, 2)} · block {res.block?.toLocaleString()}</p>
@@ -80,5 +82,5 @@ export function ConfirmSheet(props: { series: SeriesView; sym: string; spot: num
         </div>
       </div>
     </div>
-  );
+  , document.body);
 }

@@ -254,3 +254,80 @@ main { max-width: 1240px; margin: 0 auto; padding: clamp(18px, 4vw, 44px) clamp(
 .flow li::before { content: counter(s); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--violet-soft); color: #b4a8ff; font-weight: 700; font-size: 13px; }
 .flow li b { color: var(--text); }
 .toast { position: fixed; right: 18px; top: 74px; z-index: 80; background: #1c1936; border: 1px solid var(--line-strong); padding: 12px 16px; border-radius: 14px; box-shadow: 0 16px 50px rgba(0, 0, 0, .5); font-size: 14px; animation: pop .15s; max-width: 340px; }
+
+/* ═════════ MOTION SYSTEM (v2) — calm, purposeful, reduced-motion safe ═════════ */
+:root { --ease: cubic-bezier(0.22, 1, 0.36, 1); --t-fast: 140ms; --t-med: 240ms; --t-slow: 420ms; }
+
+/* quieter than before: no pulsing, no hover jumps, no glow blooms */
+.dot { animation: none; box-shadow: 0 0 0 3px rgba(111, 240, 176, 0.14); transition: background var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease); }
+.dot.blip { box-shadow: 0 0 0 6px rgba(111, 240, 176, 0.32); }
+.pill { transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), filter var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.pill:hover { transform: none; filter: brightness(1.14); }
+.pill:active { filter: brightness(0.96); }
+.pill.open { box-shadow: 0 0 0 4px rgba(131, 110, 249, 0.18); }
+.pill .chev { transition: transform var(--t-med) var(--ease); }
+.pill.open .chev { transform: translateY(.02em) rotate(180deg); }
+.cta { transition: background var(--t-fast) var(--ease), filter var(--t-fast) var(--ease), box-shadow var(--t-med) var(--ease); box-shadow: 0 8px 28px rgba(131, 110, 249, .22); }
+.cta:hover { transform: none; filter: brightness(1.06); box-shadow: 0 10px 34px rgba(131, 110, 249, .3); }
+.cta:active { filter: brightness(0.94); }
+.btn { transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), filter var(--t-fast) var(--ease); }
+.btn:active { transform: none; filter: brightness(.94); }
+
+/* popovers & sheets */
+.popover { animation: popIn var(--t-med) var(--ease) both; transform-origin: 24px -8px; }
+.popover.right { transform-origin: calc(100% - 24px) -8px; }
+@keyframes popIn { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: none; } }
+.scrim { animation: fadeIn var(--t-med) var(--ease) both; }
+@keyframes fadeIn { from { opacity: 0; } }
+.sheet { animation: sheetUp var(--t-slow) var(--ease) both; }
+@keyframes sheetUp { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: none; } }
+.view { animation: viewIn var(--t-slow) var(--ease) backwards; } /* backwards (not both): no lingering stacking context that traps modals */
+@keyframes viewIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* skeletons — fixed-size placeholders so nothing shifts when data arrives */
+.skel { display: inline-block; vertical-align: middle; background: linear-gradient(100deg, rgba(255,255,255,.05) 20%, rgba(255,255,255,.12) 40%, rgba(255,255,255,.05) 60%); background-size: 220% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { from { background-position: 120% 0; } to { background-position: -100% 0; } }
+.pill.loading { pointer-events: none; min-width: 3.2em; }
+.pill .skel { height: .7em; width: 2.2em; border-radius: 999px; }
+
+/* stable numerals */
+.sentence, .costbox .val, .chancebox b, .stat .v, .book, .tape { font-variant-numeric: tabular-nums; }
+.costbox .val { min-width: 4.4ch; display: inline-block; }
+
+/* orderbook: depth bars glide, rows wash on change */
+.book-row .bar { transition: width var(--t-slow) var(--ease); }
+.book-row { transition: background var(--t-slow) var(--ease), outline-color var(--t-med) var(--ease); }
+.book-row.flash-up { animation: flashUp 700ms var(--ease); }
+.book-row.flash-down { animation: flashDown 700ms var(--ease); }
+@keyframes flashUp { 0% { background: rgba(111, 240, 176, .26); } 100% { background: transparent; } }
+@keyframes flashDown { 0% { background: rgba(255, 123, 146, .26); } 100% { background: transparent; } }
+.tape div { animation: rowIn var(--t-med) var(--ease) both; }
+@keyframes rowIn { from { opacity: 0; transform: translateY(-4px); } }
+
+/* payoff chart: bars rise from the baseline once per market, then only glide */
+.chart .bar { transform-box: fill-box; animation: barGrow 520ms var(--ease) both; transition: y 360ms var(--ease), height 360ms var(--ease), opacity 160ms var(--ease); }
+.chart .bar.pos { transform-origin: bottom; } .chart .bar.neg { transform-origin: top; }
+@keyframes barGrow { from { transform: scaleY(0); opacity: 0; } to { transform: scaleY(1); opacity: 1; } }
+.chart .tip { transition: transform 120ms var(--ease); }
+
+/* confirmation: steps + animated check */
+.step { transition: border-color var(--t-med) var(--ease), background var(--t-med) var(--ease); }
+.step.done { border-color: rgba(111, 240, 176, .35); background: rgba(111, 240, 176, .06); }
+.check-draw { width: 64px; height: 64px; margin: 4px auto 10px; display: block; }
+.check-draw circle { fill: none; stroke: var(--yes); stroke-width: 3; stroke-dasharray: 190; stroke-dashoffset: 190; animation: dash 600ms var(--ease) forwards; }
+.check-draw path { fill: none; stroke: var(--yes); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 48; stroke-dashoffset: 48; animation: dash 420ms 380ms var(--ease) forwards; }
+@keyframes dash { to { stroke-dashoffset: 0; } }
+
+/* dock indicator + toasts */
+.dock button { transition: color var(--t-fast) var(--ease), background var(--t-med) var(--ease); }
+.toast { animation: sheetUp var(--t-med) var(--ease) both; }
+.banner { position: sticky; top: 60px; z-index: 25; display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 9px 16px; font-size: 13.5px; border-bottom: 1px solid var(--line); background: rgba(255, 200, 87, .1); color: var(--amber); animation: fadeIn var(--t-med) var(--ease) both; }
+.banner.err { background: rgba(255, 123, 146, .1); color: var(--no); }
+.banner button { border: 1px solid currentColor; background: transparent; color: inherit; padding: 4px 12px; border-radius: 999px; font-weight: 600; }
+
+/* keyboard focus */
+:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+}

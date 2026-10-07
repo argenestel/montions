@@ -1,5 +1,5 @@
 // Real onchain adapter: everything is read from view functions (no logs, no indexer, no backend).
-import { createPublicClient, createWalletClient, custom, decodeAbiParameters, http, type Address, type PublicClient } from "viem";
+import { createPublicClient, createWalletClient, custom, decodeAbiParameters, defineChain, http, type Address, type PublicClient } from "viem";
 import { MontionsClient, MULTICALL3_ADDRESS, erc20Abi, makerVaultAbi, monadTestnet, parseDeployment, priceOracleAbi, type Deployment, type QuoterSnapshot } from "@montions/sdk";
 import type { AccountView, Api, Asset, ChainInfo, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView } from "./types";
 
@@ -25,7 +25,16 @@ const eth = (): Eth | undefined => (globalThis as unknown as { ethereum?: Eth })
 const num = (b: bigint) => Number(b);
 
 export function createChainApi(deployment: Deployment): Api {
-  const publicClient = createPublicClient({ chain: monadTestnet, transport: http(deployment.rpc), batch: { multicall: { wait: 16 } } }) as PublicClient;
+  const isMonad = deployment.chainId === monadTestnet.id;
+  const isLocal = deployment.chainId === 31337;
+  // Local anvil: use its unlocked accounts as a built-in DEV wallet (no MetaMask, no keys in the page). `?injected` forces the browser wallet.
+  const useDevWallet = isLocal && typeof location !== "undefined" && !new URLSearchParams(location.search).has("injected");
+  const chain = isMonad ? monadTestnet : defineChain({
+    id: deployment.chainId, name: isLocal ? "Local anvil (dev)" : `Chain ${deployment.chainId}`,
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [deployment.rpc] } },
+    contracts: { multicall3: { address: MULTICALL3_ADDRESS } },
+  });
+  const publicClient = createPublicClient({ chain, transport: http(deployment.rpc), batch: { multicall: { wait: 16 } } }) as PublicClient;
   let client = new MontionsClient({ deployment, publicClient });
   let address: Address | undefined;
 
@@ -74,7 +83,7 @@ export function createChainApi(deployment: Deployment): Api {
     async chainInfo(): Promise<ChainInfo> {
       const block = await publicClient.getBlockNumber();
       return {
-        name: "Monad testnet", chainId: deployment.chainId, block: Number(block), explorer: monadTestnet.blockExplorers.default.url, rpc: deployment.rpc, mock: false,
+        name: isMonad ? "Monad testnet" : chain.name, chainId: deployment.chainId, block: Number(block), explorer: isMonad ? monadTestnet.blockExplorers.default.url : "", rpc: deployment.rpc, mock: false,
         contracts: Object.entries(deployment.contracts).map(([name, address]) => ({ name, address, role: ROLES[name] ?? "" })),
       };
     },
@@ -144,6 +153,13 @@ export function createChainApi(deployment: Deployment): Api {
       }
     },
     async connect(): Promise<AccountView> {
+      if (useDevWallet) {
+        const accts = (await publicClient.request({ method: "eth_accounts" } as never)) as Address[];
+        address = accts[5] ?? accts[accts.length - 1];
+        const walletClient = createWalletClient({ account: address, chain, transport: http(deployment.rpc) });
+        client = new MontionsClient({ deployment, publicClient, walletClient });
+        return this.account();
+      }
       const e = eth(); if (!e) throw new Error("No wallet found. Install MetaMask or Rabby.");
       const [acct] = (await e.request({ method: "eth_requestAccounts" })) as Address[];
       const hexId = `0x${deployment.chainId.toString(16)}`;
@@ -152,7 +168,7 @@ export function createChainApi(deployment: Deployment): Api {
         await e.request({ method: "wallet_addEthereumChain", params: [{ chainId: hexId, chainName: "Monad Testnet", nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 }, rpcUrls: [deployment.rpc], blockExplorerUrls: [monadTestnet.blockExplorers.default.url] }] });
       }
       address = acct;
-      const walletClient = createWalletClient({ account: acct, chain: monadTestnet, transport: custom(e as never) });
+      const walletClient = createWalletClient({ account: acct, chain, transport: custom(e as never) });
       client = new MontionsClient({ deployment, publicClient, walletClient });
       return this.account();
     },
