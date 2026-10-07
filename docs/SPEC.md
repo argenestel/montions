@@ -152,3 +152,47 @@ Pure TS, no React: ABIs (from forge artifacts), `ticks.ts`, `payoff.ts` (P&L at 
 - Tests: Foundry unit + fuzz; every normative rule above has at least one test. Gas snapshot for `placeOrder` (0, 1, 10 fills).
 - Agents work in a private copy (see AGENTS.md), never run `git`, and report any needed interface change instead of editing `src/interfaces/*`.
 - Everything labelled MOCK/DEMO must be labelled in code comments and UI. No claim that the demo oracle is manipulation-resistant at low liquidity.
+
+## 13. Constructors / public surface that other components may rely on (frozen)
+
+```solidity
+// src/mocks/TestUSDC.sol  (Solady ERC20 + EIP-2612 permit via Solady ERC20, 6 decimals, name "Test USDC", symbol "tUSDC")
+constructor(address owner_);  function mint(address to, uint256 amount) external; /* owner only */  function faucet() external; /* 10_000e6 per address per 1 hour */
+// src/mocks/MockERC20.sol (18 decimals default param)
+constructor(string memory name_, string memory symbol_, uint8 decimals_, address owner_);  function mint(address to, uint256 amount) external; /* owner */  function faucet() external; /* 1_000 whole tokens per address per hour */
+
+// src/oracle/SpotPool.sol
+constructor(address base, address quote, address owner_);   // quote is tUSDC (6 dec); base 18 dec
+function addLiquidity(uint256 baseAmt, uint256 quoteAmt) external;           // owner only
+function swapExactIn(address tokenIn, uint256 amountIn, uint256 minOut, address to) external returns (uint256 out);
+function priceWad() external view returns (uint256);                         // USD per 1 whole base, 1e18
+function checkpoint() external;                                              // anyone: write an observation now
+function observationCount() external view returns (uint256);
+// src/oracle/OracleHub.sol  (implements IPriceOracle)
+constructor(address owner_);  function registerAsset(bytes32 assetId, address pool) external; /* owner */  function poolOf(bytes32 assetId) external view returns (address);
+function checkpoint(bytes32 assetId) external;                                 // anyone
+
+// src/resolvers/TwapThresholdResolver.sol (implements IResolver)
+constructor();  function decode(bytes calldata data) external pure returns (address oracle, bytes32 assetId, uint256 strikeWad, bool above, uint32 window);
+function encode(address oracle, bytes32 assetId, uint256 strikeWad, bool above, uint32 window) external pure returns (bytes memory);
+// src/resolvers/TimelockOpResolver.sol (implements IResolver)
+constructor();  function encode(address timelock, bytes32 operationId) external pure returns (bytes memory);
+
+// src/pricing/PricingLib.sol  (internal library, WAD math)
+function normCdfWad(int256 xWad) internal pure returns (uint256 pWad);
+function digitalProbWad(uint256 spotWad, uint256 strikeWad, uint256 volWad, uint256 secondsToExpiry, bool above) internal pure returns (uint256 pWad);
+function probToTick(uint256 probWad) internal pure returns (uint8 tick);
+
+// src/MontionsBook.sol (implements IMontionsBook, is Solady Multicallable + ReentrancyGuard + Ownable-like)
+constructor(address collateral_, address owner_);
+
+// src/Quoter.sol (implements IQuoter)
+constructor(address book_, address twapResolver_);
+
+// src/MakerVault.sol
+constructor(address book_, address quoter_, address owner_);   // ERC20 shares, name "Montions Maker Vault", symbol "mmUSDC", 6 decimals
+function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+function withdraw(uint256 assets, address receiver, address owner_) external returns (uint256 shares);
+function totalAssets() external view returns (uint256);
+function refresh(bytes32 seriesId) external;
+```
