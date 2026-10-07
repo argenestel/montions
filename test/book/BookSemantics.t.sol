@@ -720,6 +720,18 @@ contract BookSemanticsTest is BookTestBase {
         book.placeOrder(_params(series, IMontionsBook.Side.Bid, 50, 1, false, IMontionsBook.TIF.GTC, 257));
     }
 
+    function testSplitAndMergeEnforceMaximumQuantityBeforeBalances() public {
+        uint64 tooMany = uint64(1 << 40);
+
+        vm.expectRevert(IMontionsBook.BadQty.selector);
+        vm.prank(ALICE);
+        book.split(series, tooMany);
+
+        vm.expectRevert(IMontionsBook.BadQty.selector);
+        vm.prank(ALICE);
+        book.merge(series, tooMany);
+    }
+
     function testResolveRequiresTimestampStrictlyAfterExpiry() public {
         resolver.setResult(true, true);
         vm.warp(expiry);

@@ -414,7 +414,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         if (info.status == Status.None) revert SeriesUnknown();
         if (info.status != Status.Open) revert SeriesNotOpen();
         if (block.timestamp >= info.expiry) revert Expired();
-        if (qty == 0) revert BadQty();
+        if (qty == 0 || qty > _MAX_ORDER_QTY) revert BadQty();
         uint256 amount = uint256(qty) * UNIT;
         uint256 free = cash[msg.sender];
         if (free < amount) revert InsufficientCash();
@@ -434,7 +434,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         SeriesInfo storage info = _series[seriesId];
         if (info.status == Status.None) revert SeriesUnknown();
         if (info.status != Status.Open) revert SeriesNotOpen();
-        if (qty == 0) revert BadQty();
+        if (qty == 0 || qty > _MAX_ORDER_QTY) revert BadQty();
         uint256 amount = uint256(qty) * UNIT;
         if (_outcomeBalance(msg.sender, info.yesId) < qty || _outcomeBalance(msg.sender, info.noId) < qty) {
             revert InsufficientTokens();
