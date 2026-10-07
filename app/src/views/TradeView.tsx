@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AccountView, Quote, SeriesView } from "../api/types";
+import type { AccountView, ChainInfo, Quote, SeriesView, WalletState } from "../api/types";
 import { BookLadder, BookSkeleton } from "../components/BookLadder";
 import { Num, Skel } from "../components/Motion";
 import { ConfirmSheet } from "../components/ConfirmSheet";
@@ -10,7 +10,7 @@ import { PillPopover, useApi, useNow, usePoll } from "../lib/hooks";
 const nearest = <T,>(xs: T[], f: (x: T) => number, target: number): T | undefined =>
   xs.reduce<T | undefined>((best, x) => (best === undefined || Math.abs(f(x) - target) < Math.abs(f(best) - target) ? x : best), undefined);
 
-export function TradeView(props: { account?: AccountView; onNeedConnect: () => Promise<void> }) {
+export function TradeView(props: { account?: AccountView; wallet?: WalletState; info?: ChainInfo; onNeedConnect: () => Promise<void>; onToast: (m: string) => void }) {
   const api = useApi();
   const now = useNow(1000);
   const assets = usePoll(() => api.assets(), [api], 2500);
@@ -21,6 +21,8 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
   const [expiry, setExpiry] = useState<number>();
   const [strike, setStrike] = useState<number>();
   const [confirm, setConfirm] = useState(false);
+  const [slip, setSlip] = useState(() => { try { return Number(localStorage.getItem("montions.slip") ?? 1); } catch { return 1; } });
+  const setSlipSaved = (n: number) => { setSlip(n); try { localStorage.setItem("montions.slip", String(n)); } catch { /* private mode */ } };
 
   const asset = assets?.find((a) => a.symbol === sym);
   const spot = asset?.spot ?? 1;
@@ -68,8 +70,9 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
   const chance = chanceOf(selected);
   const strikePct = spot ? (strike ?? spot) / spot - 1 : 0;
 
+  const tradingBlocked = !!props.info?.paused || !!props.wallet?.wrongNetwork || (selected ? selected.expiry <= now + 30 : false);
   const buy = async () => {
-    if (!props.account?.address) await props.onNeedConnect();
+    if (!props.account?.address) { await props.onNeedConnect(); return; }
     setConfirm(true);
   };
 
@@ -168,10 +171,19 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
         {quote && quote.filled > 0 && !quote.complete && <div className="warnline" style={{ marginTop: 6 }}>Only {quote.filled.toLocaleString()} of {contracts.toLocaleString()} contracts are available right now — lower the amount to fill completely.</div>}
 
         <div className="cta-row">
-          <button className="cta" disabled={!selected || !quote || quote.filled === 0} onClick={buy}>
-            Buy for {selected ? usd(cost, cost < 100 ? 2 : 0) : "—"} <span>→</span>
+          <button className="cta" disabled={!selected || !quote || quote.filled === 0 || tradingBlocked} onClick={buy}>
+            {props.account?.address ? "Buy for" : "Connect & buy for"} {selected ? usd(cost, cost < 100 ? 2 : 0) : "—"} <span>→</span>
           </button>
-          {!props.account?.address && <span className="subnote">Connect a wallet to trade (testnet tUSDC faucet included).</span>}
+          <PillPopover pill={(o, t) => <button className={`btn ghost ${o ? "open" : ""}`} onClick={t} aria-label="Slippage tolerance">Slippage {slip}¢ ▾</button>}>
+            {(close) => (
+              <div>
+                <div className="pop-title">You won't pay more than this much above the quoted price (per $1 of payout).</div>
+                <div className="seg">{[0, 1, 2, 5].map((n) => <button key={n} className={`${n === slip ? "sel yes" : ""}`} onClick={() => { setSlipSaved(n); close(); }}>{n === 0 ? "None" : `${n}¢`}</button>)}</div>
+              </div>
+            )}
+          </PillPopover>
+          {!props.account?.address && <span className="subnote">{props.info?.network === "mainnet" ? "Connect a wallet to trade." : "Connect a wallet to trade (test USDC faucet included)."}</span>}
+          {props.info?.paused && <span className="warnline">Trading is paused.</span>}
         </div>
 
         <div className="chartwrap card">
@@ -196,7 +208,7 @@ export function TradeView(props: { account?: AccountView; onNeedConnect: () => P
       </aside>
 
       {confirm && selected && (
-        <ConfirmSheet series={selected} sym={sym} spot={spot} above={above} payout={payout} contracts={contracts} quote={quote} onClose={() => setConfirm(false)} />
+        <ConfirmSheet series={selected} sym={sym} spot={spot} above={above} payout={payout} contracts={contracts} quote={quote} slip={slip} mock={!!asset?.mock} explorer={props.info?.explorer} network={props.info?.network} onClose={() => setConfirm(false)} />
       )}
     </div>
   );

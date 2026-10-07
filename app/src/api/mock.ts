@@ -1,7 +1,7 @@
 // DEV MOCK — in-memory simulation of the Montions contracts so the UI can be built before/without a deployment.
 // The production app uses chainApi.ts; this file never talks to a chain and is clearly labelled in the UI.
 import { clampTick, digitalProb } from "../lib/model";
-import type { AccountView, Api, Asset, ChainInfo, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView } from "./types";
+import type { AccountView, Api, Asset, ChainInfo, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView, WalletState } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const hex = (n: number): Hex => `0x${(n + 1).toString(16).padStart(64, "0")}` as Hex;
@@ -85,9 +85,13 @@ const view = (s: MockSeries): SeriesView => {
 
 export const mockApi: Api = {
   mode: "mock",
+  async wallet(): Promise<WalletState> { return { address: state.connected ? ("0x95B0A1c9f4d2e6B7A3c8D5e1F0a9B2c48Da8" as Hex) : undefined, chainId: 10143, expectedChainId: 10143, wrongNetwork: false }; },
+  async switchNetwork() {},
+  disconnect() { state.connected = false; },
+  onWalletChange() { return () => {}; },
   async chainInfo(): Promise<ChainInfo> {
     return {
-      name: "DEV MOCK (no chain)", chainId: 10143, block: state.block, explorer: "https://testnet.monadvision.com", rpc: "mock", mock: true,
+      name: "DEV MOCK (no chain)", chainId: 10143, block: state.block, explorer: "https://testnet.monadvision.com", rpc: "mock", mock: true, network: "mock", paused: false,
       contracts: [
         { name: "MontionsBook", address: "0x0000000000000000000000000000000000000001", role: "Orderbook + collateral + settlement" },
         { name: "OracleHub", address: "0x0000000000000000000000000000000000000002", role: "TWAP oracle over onchain pools" },

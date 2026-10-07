@@ -4,17 +4,18 @@ import type { Api } from "../api/types";
 export const ApiCtx = createContext<Api>(null as unknown as Api);
 export const useApi = () => useContext(ApiCtx);
 
-/** Poll an async function; returns the latest value. */
+/** Poll an async function; keeps the last good value on errors and backs off (x2, max 30s) while failing. */
 export function usePoll<T>(fn: () => Promise<T>, deps: unknown[], ms = 4000): T | undefined {
   const [v, setV] = useState<T>();
   useEffect(() => {
-    let alive = true;
+    let alive = true, timer: ReturnType<typeof setTimeout>, fails = 0;
     const run = async () => {
-      try { const r = await fn(); if (alive) setV(r); } catch (e) { console.error(e); }
+      try { const r = await fn(); fails = 0; if (alive) setV(r); }
+      catch (e) { fails++; if (fails === 1) console.error(e); }
+      if (alive) timer = setTimeout(run, Math.min(30_000, ms * 2 ** Math.min(fails, 4)));
     };
     run();
-    const t = setInterval(run, ms);
-    return () => { alive = false; clearInterval(t); };
+    return () => { alive = false; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return v;

@@ -14,8 +14,8 @@ export function Header(props: { info?: ChainInfo; account?: AccountView; onConne
           <span className="chip"><span className={`dot ${info?.mock ? "warn" : ""} ${blip ? "blip" : ""}`} /> {info ? <><b>{info.mock ? "mock" : info.name}</b> block <span className="mono">{info.block.toLocaleString()}</span></> : "connecting…"}</span>
           {account?.address ? (
             <>
-              <span className="chip"><b>{usd(account.usdc)}</b> tUSDC</span>
-              <button className="btn" onClick={props.onFaucet}>+ Faucet</button>
+              <span className="chip"><b>{usd(account.usdc)}</b> {info?.network === "mainnet" ? "USDC" : "tUSDC"}</span>
+              {info?.network !== "mainnet" && <button className="btn" onClick={props.onFaucet}>+ Faucet</button>}
               <span className="chip mono">{short(account.address)}</span>
             </>
           ) : <button className="btn primary" onClick={props.onConnect}>Connect wallet</button>}

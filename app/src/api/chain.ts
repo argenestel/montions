@@ -1,13 +1,29 @@
 // Real onchain adapter: everything is read from view functions (no logs, no indexer, no backend).
-import { createPublicClient, createWalletClient, custom, decodeAbiParameters, defineChain, http, type Address, type PublicClient } from "viem";
-import { MontionsClient, MULTICALL3_ADDRESS, erc20Abi, makerVaultAbi, monadTestnet, parseDeployment, priceOracleAbi, type Deployment, type QuoterSnapshot } from "@montions/sdk";
-import type { AccountView, Api, Asset, ChainInfo, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView } from "./types";
+import { createPublicClient, createWalletClient, custom, decodeAbiParameters, defineChain, fallback, http, parseAbi, type Address, type Chain, type PublicClient } from "viem";
+import { MontionsClient, MULTICALL3_ADDRESS, makerVaultAbi, monadTestnet, parseDeployment, priceOracleAbi, type Deployment, type QuoterSnapshot } from "@montions/sdk";
+import { explain, isUserRejection } from "../lib/errors";
+import type { AccountView, Api, Asset, ChainInfo, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView, WalletState } from "./types";
 
 const WAD = 1e18, USDC = 1e6;
+const MONAD_MAINNET_ID = 143;
+export const monadMainnet = defineChain({
+  id: MONAD_MAINNET_ID, name: "Monad", nativeCurrency: { name: "Monad", symbol: "MON", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.monad.xyz"] } },
+  blockExplorers: { default: { name: "MonadVision", url: "https://monadvision.com" } },
+  contracts: { multicall3: { address: MULTICALL3_ADDRESS } },
+});
+
+// Optional Book views added by the safety-controls upgrade; absent on older deployments (calls are try/caught).
+const bookExtraAbi = parseAbi([
+  "function paused() view returns (bool)",
+  "function collateralCap() view returns (uint256)",
+  "function totalCollateral() view returns (uint256)",
+]);
+
 const ROLES: Record<string, string> = {
-  book: "Orderbook · collateral · settlement", montionsBook: "Orderbook · collateral · settlement", quoter: "Fair value + book walking",
-  oracle: "TWAP oracle over onchain pools", oracleHub: "TWAP oracle over onchain pools", vault: "Onchain market maker", makerVault: "Onchain market maker",
-  collateral: "Test USDC (6 dec, permit)", usdc: "Test USDC (6 dec, permit)", twapResolver: "Settles price series from TWAP", timelockResolver: "Settles governance-event series",
+  book: "Orderbook · collateral · settlement", quoter: "Fair value + book walking", oracleHub: "TWAP oracle over onchain pools (demo)",
+  pythOracle: "Pyth price adapter", pythResolver: "Settles from Pyth's first price at expiry", vault: "Onchain market maker", collateral: "Collateral token (USDC)",
+  twapResolver: "Settles price series from pool TWAP (demo)", timelockResolver: "Settles governance-event series",
 };
 
 export async function loadDeployment(): Promise<Deployment | undefined> {
@@ -20,25 +36,32 @@ export async function loadDeployment(): Promise<Deployment | undefined> {
   } catch { return undefined; }
 }
 
-type Eth = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
+type Eth = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; on?: (ev: string, cb: (...a: unknown[]) => void) => void; removeListener?: (ev: string, cb: (...a: unknown[]) => void) => void };
 const eth = (): Eth | undefined => (globalThis as unknown as { ethereum?: Eth }).ethereum;
 const num = (b: bigint) => Number(b);
 
 export function createChainApi(deployment: Deployment): Api {
-  const isMonad = deployment.chainId === monadTestnet.id;
   const isLocal = deployment.chainId === 31337;
-  // Local anvil: use its unlocked accounts as a built-in DEV wallet (no MetaMask, no keys in the page). `?injected` forces the browser wallet.
+  const network: ChainInfo["network"] = deployment.network ?? (isLocal ? "local" : deployment.chainId === MONAD_MAINNET_ID ? "mainnet" : "testnet");
+  // Local anvil: built-in DEV wallet from the node's unlocked accounts (no MetaMask, no keys in the page). `?injected` forces the browser wallet.
   const useDevWallet = isLocal && typeof location !== "undefined" && !new URLSearchParams(location.search).has("injected");
-  const chain = isMonad ? monadTestnet : defineChain({
-    id: deployment.chainId, name: isLocal ? "Local anvil (dev)" : `Chain ${deployment.chainId}`,
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [deployment.rpc] } },
-    contracts: { multicall3: { address: MULTICALL3_ADDRESS } },
-  });
-  const publicClient = createPublicClient({ chain, transport: http(deployment.rpc), batch: { multicall: { wait: 16 } } }) as PublicClient;
+
+  const chain: Chain = deployment.chainId === monadTestnet.id ? monadTestnet
+    : deployment.chainId === MONAD_MAINNET_ID ? monadMainnet
+    : defineChain({ id: deployment.chainId, name: isLocal ? "Local anvil (dev)" : `Chain ${deployment.chainId}`, nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [deployment.rpc] } }, contracts: { multicall3: { address: MULTICALL3_ADDRESS } } });
+  const explorer = deployment.explorer ?? chain.blockExplorers?.default.url ?? "";
+  const rpcs = [deployment.rpc, ...(deployment.rpcs ?? []).filter((u) => u !== deployment.rpc)];
+  // Multiple endpoints => automatic failover with retries; one endpoint => plain http with retries.
+  const transport = rpcs.length > 1 ? fallback(rpcs.map((u) => http(u, { retryCount: 2, timeout: 12_000 })), { retryCount: 1 }) : http(rpcs[0], { retryCount: 2, timeout: 12_000 });
+  const publicClient = createPublicClient({ chain, transport, batch: { multicall: { wait: 16 } } }) as PublicClient;
   let client = new MontionsClient({ deployment, publicClient });
   let address: Address | undefined;
+  let usingDev = false;
 
-  const hub = (deployment.contracts.oracleHub ?? deployment.contracts.oracle) as Address | undefined;
+  const c = deployment.contracts;
+  const poolHub = (c.oracleHub ?? c.oracle) as Address | undefined;
+  const pyth = c.pythOracle as Address | undefined;
+  const oracleFor = (a: { oracle?: "pool" | "pyth" }) => (a.oracle === "pyth" ? pyth : poolHub);
   const assetBySym = new Map(deployment.assets.map((a) => [a.symbol, a]));
   const assetById = new Map(deployment.assets.map((a) => [a.assetId.toLowerCase(), a]));
 
@@ -77,23 +100,77 @@ export function createChainApi(deployment: Deployment): Api {
   };
 
   const requireClient = () => { if (!address) throw new Error("Connect a wallet first"); return client; };
+  const listeners = new Set<() => void>();
+  const emit = () => listeners.forEach((f) => f());
+
+  // injected-wallet events
+  const attach = (e: Eth) => {
+    const onAccounts = (...a: unknown[]) => {
+      const list = (a[0] as Address[]) ?? [];
+      if (!list.length) { address = undefined; client = new MontionsClient({ deployment, publicClient }); } else if (address) { address = list[0]; rebuildWallet(e); }
+      snapCache = undefined; emit();
+    };
+    const onChain = () => { snapCache = undefined; emit(); };
+    e.on?.("accountsChanged", onAccounts); e.on?.("chainChanged", onChain);
+  };
+  let attached = false;
+  const rebuildWallet = (e: Eth) => {
+    const walletClient = createWalletClient({ account: address, chain, transport: custom(e as never) });
+    client = new MontionsClient({ deployment, publicClient, walletClient });
+  };
+
+  const walletChainId = async (): Promise<number | undefined> => {
+    if (usingDev) return deployment.chainId;
+    const e = eth(); if (!e || !address) return undefined;
+    try { return parseInt((await e.request({ method: "eth_chainId" })) as string, 16); } catch { return undefined; }
+  };
+
+  const readExtra = async <T,>(fn: "paused" | "collateralCap" | "totalCollateral", fallbackValue: T): Promise<T> => {
+    try { return (await publicClient.readContract({ address: c.book as Address, abi: bookExtraAbi, functionName: fn })) as T; } catch { return fallbackValue; }
+  };
+
+  const guardNetwork = async () => {
+    const id = await walletChainId();
+    if (id !== undefined && id !== deployment.chainId) throw Object.assign(new Error(`Wrong network: wallet is on chain ${id}, expected ${deployment.chainId}`), { code: "WRONG_NETWORK" });
+  };
 
   return {
     mode: "chain",
+    async wallet(): Promise<WalletState> {
+      const id = await walletChainId();
+      return { address, chainId: id, expectedChainId: deployment.chainId, wrongNetwork: id !== undefined && id !== deployment.chainId };
+    },
+    async switchNetwork() {
+      const e = eth(); if (!e) throw new Error("No wallet found.");
+      const hexId = `0x${deployment.chainId.toString(16)}`;
+      try { await e.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] }); }
+      catch (err) {
+        if (isUserRejection(err)) throw err;
+        await e.request({ method: "wallet_addEthereumChain", params: [{ chainId: hexId, chainName: chain.name, nativeCurrency: chain.nativeCurrency, rpcUrls: rpcs, blockExplorerUrls: explorer ? [explorer] : [] }] });
+      }
+      emit();
+    },
+    disconnect() { address = undefined; usingDev = false; client = new MontionsClient({ deployment, publicClient }); emit(); },
+    onWalletChange(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },
+
     async chainInfo(): Promise<ChainInfo> {
-      const block = await publicClient.getBlockNumber();
+      const [block, paused, cap, total] = await Promise.all([publicClient.getBlockNumber(), readExtra<boolean>("paused", false), readExtra<bigint | undefined>("collateralCap", undefined), readExtra<bigint | undefined>("totalCollateral", undefined)]);
+      const big = (v?: bigint) => (v === undefined || v > 10n ** 30n ? undefined : Number(v) / USDC);
       return {
-        name: isMonad ? "Monad testnet" : chain.name, chainId: deployment.chainId, block: Number(block), explorer: isMonad ? monadTestnet.blockExplorers.default.url : "", rpc: deployment.rpc, mock: false,
-        contracts: Object.entries(deployment.contracts).map(([name, address]) => ({ name, address, role: ROLES[name] ?? "" })),
+        name: chain.name, chainId: deployment.chainId, block: Number(block), explorer, rpc: deployment.rpc, mock: false, network, paused,
+        collateralCapUsd: big(cap), totalCollateralUsd: big(total),
+        contracts: Object.entries(c).map(([name, address]) => ({ name, address, role: ROLES[name] ?? "" })),
       };
     },
     async assets(): Promise<Asset[]> {
       const rows = await snaps();
       return Promise.all(deployment.assets.map(async (a) => {
         let spot = 0;
-        if (hub) { const [p] = (await publicClient.readContract({ address: hub, abi: priceOracleAbi, functionName: "latestPrice", args: [a.assetId] })) as [bigint, bigint]; spot = Number(p) / WAD; }
+        const oracle = oracleFor(a);
+        if (oracle) { const [p] = (await publicClient.readContract({ address: oracle, abi: priceOracleAbi, functionName: "latestPrice", args: [a.assetId] })) as [bigint, bigint]; spot = Number(p) / WAD; }
         const vols = rows.filter((r) => decodeData(r.info.data)?.assetId.toLowerCase() === a.assetId.toLowerCase() && r.volWad > 0n).map((r) => Number(r.volWad) / WAD);
-        return { symbol: a.symbol, name: a.symbol === "MON" ? "Monad (demo pool)" : `${a.symbol} (mock)`, assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock: true };
+        const mock = a.mock ?? a.oracle !== "pyth";
+        return { symbol: a.symbol, name: a.name ?? (mock ? `${a.symbol} (demo pool)` : a.symbol), assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock };
       }));
     },
     async seriesFor(sym) {
@@ -113,63 +190,63 @@ export function createChainApi(deployment: Deployment): Api {
       return { filled: num(q.filled), cost: Number(q.cost) / USDC, avgTick: q.avgTick, worstTick: q.worstTick, complete: q.complete };
     },
     async buy(id, yes, contracts, maxPriceTick, onStep): Promise<TxResult> {
-      const c = requireClient(); const owner = address!;
       const steps: Step[] = [
-        { label: "Sign tUSDC permit (no approval tx)", state: "active" },
-        { label: "deposit + placeOrder (one multicall)", state: "todo" },
+        { label: "Sign collateral permit (no approval tx)", state: "active" },
+        { label: "deposit + placeOrder (one transaction)", state: "todo" },
         { label: "Matched against the onchain book", state: "todo" },
       ];
       const push = () => onStep(steps.map((s) => ({ ...s })));
       push();
       try {
+        const cl = requireClient(); const owner = address!;
+        await guardNetwork();
         const qty = BigInt(contracts);
         const tick = yes ? Math.min(99, maxPriceTick) : Math.max(1, 100 - maxPriceTick);
         const escrow = yes ? qty * BigInt(tick) * 10_000n : qty * BigInt(100 - tick) * 10_000n;
-        const need = (escrow * 102n) / 100n + 1n;
-        const before = await c.positions(id, owner);
+        const need = (escrow * 102n) / 100n + 1n;      // +2% covers any taker-fee reserve
+        const before = await cl.positions(id, owner);
         const deposit = need > before.cash ? need - before.cash : 0n;
         const params = { seriesId: id, side: yes ? "bid" : "ask", tick, qty, tif: "ioc", fromHeld: false } as const;
         let hash: Hex;
         if (deposit > 0n) {
-          const permit = await c.signPermit({ amount: deposit, owner });
+          const permit = await cl.signPermit({ amount: deposit, owner });
           steps[0].state = "done"; steps[1].state = "active"; push();
-          hash = await c.depositWithPermitAndPlaceOrder(deposit, params, { permit });
+          hash = await cl.depositWithPermitAndPlaceOrder(deposit, params, { permit });
         } else {
           steps[0].state = "done"; steps[1].state = "active"; push();
-          hash = await c.placeOrder(params);
+          hash = await cl.placeOrder(params);
         }
         steps[1].hash = hash; steps[1].state = "done"; steps[2].state = "active"; push();
-        const rc = await publicClient.waitForTransactionReceipt({ hash });
+        const rc = await publicClient.waitForTransactionReceipt({ hash, timeout: 90_000 });
         if (rc.status !== "success") throw new Error("Transaction reverted");
-        const after = await c.positions(id, owner);
+        const after = await cl.positions(id, owner);
         const filled = Number(yes ? after.yes - before.yes : after.no - before.no);
         const cost = Number(before.cash + deposit - after.cash) / USDC;
         steps[2].state = "done"; push();
         snapCache = undefined;
+        if (filled === 0) return { ok: false, filled: 0, cost: 0, hash, error: "Nothing filled: the price moved beyond your limit. You were not charged." };
         return { ok: true, filled, cost, hash, block: Number(rc.blockNumber) };
       } catch (e) {
         const i = steps.findIndex((s) => s.state === "active"); if (i >= 0) steps[i].state = "error"; push();
-        return { ok: false, filled: 0, cost: 0, error: e instanceof Error ? e.message.split("\n")[0] : String(e) };
+        return { ok: false, filled: 0, cost: 0, error: explain(e) };
       }
     },
     async connect(): Promise<AccountView> {
       if (useDevWallet) {
         const accts = (await publicClient.request({ method: "eth_accounts" } as never)) as Address[];
-        address = accts[5] ?? accts[accts.length - 1];
+        address = accts[5] ?? accts[accts.length - 1]; usingDev = true;
         const walletClient = createWalletClient({ account: address, chain, transport: http(deployment.rpc) });
         client = new MontionsClient({ deployment, publicClient, walletClient });
         return this.account();
       }
-      const e = eth(); if (!e) throw new Error("No wallet found. Install MetaMask or Rabby.");
+      const e = eth(); if (!e) throw new Error("No wallet found. Install MetaMask, Rabby or another EVM wallet.");
       const [acct] = (await e.request({ method: "eth_requestAccounts" })) as Address[];
-      const hexId = `0x${deployment.chainId.toString(16)}`;
-      try { await e.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] }); }
-      catch {
-        await e.request({ method: "wallet_addEthereumChain", params: [{ chainId: hexId, chainName: "Monad Testnet", nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 }, rpcUrls: [deployment.rpc], blockExplorerUrls: [monadTestnet.blockExplorers.default.url] }] });
-      }
-      address = acct;
-      const walletClient = createWalletClient({ account: acct, chain, transport: custom(e as never) });
-      client = new MontionsClient({ deployment, publicClient, walletClient });
+      address = acct; usingDev = false;
+      if (!attached) { attach(e); attached = true; }
+      rebuildWallet(e);
+      const id = await walletChainId();
+      if (id !== deployment.chainId) { try { await this.switchNetwork(); } catch { /* the wrong-network banner offers a retry */ } }
+      emit();
       return this.account();
     },
     async account(): Promise<AccountView> {
@@ -177,7 +254,10 @@ export function createChainApi(deployment: Deployment): Api {
       const [usdc, cash, native] = await Promise.all([client.collateralBalance(address), client.cashBalances(address), publicClient.getBalance({ address })]);
       return { address, usdc: Number(usdc) / USDC, bookCash: Number(cash.free) / USDC, locked: Number(cash.locked) / USDC, native: Number(native) / WAD };
     },
-    async faucet() { const h = await requireClient().faucet(); await publicClient.waitForTransactionReceipt({ hash: h }); },
+    async faucet() {
+      if (network === "mainnet") throw new Error("There is no faucet on mainnet.");
+      const h = await requireClient().faucet(); await publicClient.waitForTransactionReceipt({ hash: h });
+    },
     async positions(): Promise<Position[]> {
       if (!address) return [];
       const rows = (await snaps()).filter((s) => !!toView(s));
@@ -196,13 +276,14 @@ export function createChainApi(deployment: Deployment): Api {
       const rows = await snaps(); const title = new Map(rows.map((s) => [s.seriesId, s.title]));
       return (await client.orders(address, 0, 100)).filter((o) => o.open).map((o) => ({ id: num(o.id), seriesId: o.seriesId, title: title.get(o.seriesId) ?? "", side: o.side === 0 ? "bid" : "ask", tick: o.tick, qty: num(o.qty), fromHeld: o.fromHeld }));
     },
-    async cancel(orderId) { const h = await requireClient().cancelOrder(BigInt(orderId)); await publicClient.waitForTransactionReceipt({ hash: h }); },
+    async cancel(orderId) { await guardNetwork(); const h = await requireClient().cancelOrder(BigInt(orderId)); await publicClient.waitForTransactionReceipt({ hash: h }); },
     async redeem(seriesId) {
-      const c = requireClient(); const b = await c.positions(seriesId, address!);
-      const h = await c.redeem(seriesId, b.yes, b.no); await publicClient.waitForTransactionReceipt({ hash: h });
+      await guardNetwork();
+      const cl = requireClient(); const b = await cl.positions(seriesId, address!);
+      const h = await cl.redeem(seriesId, b.yes, b.no); await publicClient.waitForTransactionReceipt({ hash: h });
     },
     async vault(): Promise<VaultView> {
-      const v = deployment.contracts.vault ?? deployment.contracts.makerVault as Address | undefined;
+      const v = (c.vault ?? c.makerVault) as Address | undefined;
       if (!v) return { tvl: 0, sharePrice: 1, myShares: 0, myAssets: 0, activeSeries: 0, exposurePct: 0 };
       const [assets, supply] = await Promise.all([
         publicClient.readContract({ address: v, abi: makerVaultAbi, functionName: "totalAssets" }) as Promise<bigint>,
@@ -213,15 +294,16 @@ export function createChainApi(deployment: Deployment): Api {
       return { tvl: Number(assets) / USDC, sharePrice: price, myShares: Number(my) / USDC, myAssets: (Number(my) / USDC) * price, activeSeries: (await snaps()).filter((s) => s.info.status === 1).length, exposurePct: 0.3 };
     },
     async vaultDeposit(amount) {
-      const c = requireClient(); const v = deployment.contracts.vault ?? deployment.contracts.makerVault as Address;
+      await guardNetwork();
+      const cl = requireClient(); const v = (c.vault ?? c.makerVault) as Address;
       const raw = BigInt(Math.round(amount * USDC));
-      await publicClient.waitForTransactionReceipt({ hash: await c.approveCollateral(v, raw) });
-      await publicClient.waitForTransactionReceipt({ hash: await c.vaultDeposit(raw, address) });
+      await publicClient.waitForTransactionReceipt({ hash: await cl.approveCollateral(v, raw) });
+      await publicClient.waitForTransactionReceipt({ hash: await cl.vaultDeposit(raw, address) });
     },
     async vaultWithdraw(amount) {
-      const c = requireClient(); const raw = BigInt(Math.round(amount * USDC));
-      await publicClient.waitForTransactionReceipt({ hash: await c.vaultWithdraw(raw, address, address) });
+      await guardNetwork();
+      const cl = requireClient(); const raw = BigInt(Math.round(amount * USDC));
+      await publicClient.waitForTransactionReceipt({ hash: await cl.vaultWithdraw(raw, address, address) });
     },
   };
 }
-void erc20Abi; void MULTICALL3_ADDRESS;

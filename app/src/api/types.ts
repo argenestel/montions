@@ -74,14 +74,23 @@ export interface ChainInfo {
   explorer: string;
   rpc: string;
   mock: boolean;        // true => dev mock, not connected to a deployment
+  network: "mock" | "local" | "testnet" | "mainnet";
+  paused: boolean;      // Book is paused for NEW risk (exits always work)
+  collateralCapUsd?: number; totalCollateralUsd?: number;
   contracts: { name: string; address: string; role: string }[];
 }
 
 export type Step = { label: string; state: "todo" | "active" | "done" | "error"; hash?: string };
 export interface TxResult { ok: boolean; filled: number; cost: number; hash?: string; block?: number; error?: string }
 
+export interface WalletState { address?: Hex; chainId?: number; expectedChainId: number; wrongNetwork: boolean }
 export interface Api {
   mode: "mock" | "chain";
+  wallet(): Promise<WalletState>;
+  switchNetwork(): Promise<void>;
+  disconnect(): void;
+  /** subscribe to wallet account/network changes; returns an unsubscribe function */
+  onWalletChange(cb: () => void): () => void;
   chainInfo(): Promise<ChainInfo>;
   assets(): Promise<Asset[]>;
   seriesFor(assetSymbol: string): Promise<SeriesView[]>;
