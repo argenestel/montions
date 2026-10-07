@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { mockApi } from "./api/mock";
+import { createChainApi, loadDeployment } from "./api/chain";
 import type { AccountView, Api, ChainInfo } from "./api/types";
 import { Header } from "./components/Header";
 import { ApiCtx } from "./lib/hooks";
@@ -17,20 +18,23 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
 ];
 
 export default function App() {
-  const [api] = useState<Api>(mockApi);
+  const [api, setApi] = useState<Api | undefined>();
+  useEffect(() => { loadDeployment().then((d) => setApi(d ? createChainApi(d) : mockApi)); }, []);
   const [tab, setTab] = useState<Tab>("trade");
   const [account, setAccount] = useState<AccountView>();
   const [info, setInfo] = useState<ChainInfo>();
 
-  const refresh = useCallback(async () => { try { setAccount(await api.account()); } catch (e) { console.error(e); } }, [api]);
+  const refresh = useCallback(async () => { try { if (api) setAccount(await api.account()); } catch (e) { console.error(e); } }, [api]);
   useEffect(() => {
+    if (!api) return;
     refresh();
     const t = setInterval(async () => { try { setInfo(await api.chainInfo()); } catch { /* ignore */ } }, 2500);
     api.chainInfo().then(setInfo).catch(() => undefined);
     return () => clearInterval(t);
   }, [api, refresh]);
 
-  const connect = useCallback(async () => { setAccount(await api.connect()); }, [api]);
+  const connect = useCallback(async () => { if (api) setAccount(await api.connect()); }, [api]);
+  if (!api) return <div className="app"><main><p className="page-sub">Loading deployment…</p></main></div>;
 
   return (
     <ApiCtx.Provider value={api}>
