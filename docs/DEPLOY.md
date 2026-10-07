@@ -11,7 +11,18 @@ pnpm --dir bots install
 ./scripts/e2e-local.sh
 ```
 
-The script selects a free localhost port, starts Anvil with chain ID 31337, uses Anvil's unlocked accounts (queried via `eth_accounts`), deploys contracts, seeds liquidity and series, exercises both bots, then performs a buy/resolve/redeem flow. It reads no private keys and does not connect to an external RPC.
+The script selects a free localhost port, starts Anvil with chain ID 31337, uses Anvil's unlocked accounts (queried via `eth_accounts`), deploys contracts, seeds maker cash, exercises both bots, then performs a buy/resolve/redeem flow. It reads no private keys and does not connect to an external RPC.
+
+One-command local stack (anvil + deploy + maker seed + canonical ladder + vault quotes + price bot):
+
+```sh
+pnpm --dir bots install
+ANVIL_PORT=8547 UI_COPY=1 ./scripts/dev-up.sh
+ANVIL_PORT=8547 ./scripts/dev-check.sh   # exactly N planned series, no duplicates, >= 20 quoted
+./scripts/dev-down.sh
+```
+
+`dev-up.sh` uses Anvil unlocked accounts (never prints keys). Prefer a **free** `ANVIL_PORT` when running in parallel with other agents; do not collide with 8545/8547 if those are already taken. Set `UI_COPY=0` to skip copying the manifest into `app/public`.
 
 For manual deployment and seeding, start Anvil in another terminal and use its RPC URL:
 
@@ -28,10 +39,15 @@ read -rsp 'Anvil deployer private key: ' DEPLOYER_PRIVATE_KEY; echo
 export DEPLOYER_PRIVATE_KEY
 forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast --slow --disable-code-size-limit
 forge script script/Seed.s.sol:Seed --rpc-url "$RPC_URL" --broadcast --slow --disable-code-size-limit
-unset DEPLOYER_PRIVATE_KEY
+# Canonical UTC ladder (idempotent). Seed.s.sol only deposits maker cash / optional SEED_VAULT=1.
+export BOT_PRIVATE_KEY="$DEPLOYER_PRIVATE_KEY"
+pnpm --dir bots exec tsx src/seed-ladder.ts
+unset DEPLOYER_PRIVATE_KEY BOT_PRIVATE_KEY
 ```
 
 The deploy script seeds MON at approximately $1.00 and NVDA at approximately $180 using deep reserves. It writes `deployments/31337.json`. The local Anvil command raises the contract-size cap for the current Book artifact; check the target Monad network's deployed-code limits before testnet deployment. The vault is optional and omitted by default. Set `DEPLOY_VAULT=1` only after the `MakerVault.sol:MakerVault` artifact is available; the manifest includes `contracts.vault` only when deployment succeeds.
+
+The rolling ladder is **canonical and UTC-aligned** so creation is idempotent: 15m on `:00/:15/:30/:45`; 1h on the hour; 4h at 00/04/08/12/16/20 UTC; 1d at 00:00 UTC; 3d every third Unix-epoch day at 00:00 UTC; 7d on Fridays 08:00 UTC. Each bucket keeps the next two upcoming expiries that satisfy `MIN_DURATION` (120s). Strikes are `{0.8,0.9,0.95,1.0,1.05,1.1,1.2,1.35,1.5}` times a reference price rounded to 2 significant digits, then snapped to 3 significant digits. Overlapping bucket timestamps collapse to one series. `pnpm --dir bots exec tsx src/seed-ladder.ts` creates missing series via `Book.multicall` in chunks of 20 and skips any id that already has `seriesInfo` status ≠ None.
 
 ## Monad testnet (chain ID 10143)
 
@@ -47,16 +63,19 @@ forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --chain-id 10143 \
   --account montions-deployer --sender "$DEPLOYER_ADDRESS" --broadcast --slow --disable-code-size-limit
 forge script script/Seed.s.sol:Seed --rpc-url "$RPC_URL" --chain-id 10143 \
   --account montions-deployer --sender "$DEPLOYER_ADDRESS" --broadcast --slow --disable-code-size-limit
+# After Seed, create the canonical ladder with an unlocked/keystore signer (never echo the key):
+# BOT_ADDRESS="$DEPLOYER_ADDRESS" pnpm --dir bots exec tsx src/seed-ladder.ts
 
 # Option B: environment key (do not echo it or save it to disk).
 # read -rsp 'Deployer private key: ' DEPLOYER_PRIVATE_KEY; echo
 # export DEPLOYER_PRIVATE_KEY
 # forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --chain-id 10143 --broadcast --slow --disable-code-size-limit
 # forge script script/Seed.s.sol:Seed --rpc-url "$RPC_URL" --chain-id 10143 --broadcast --slow --disable-code-size-limit
-# unset DEPLOYER_PRIVATE_KEY
+# BOT_PRIVATE_KEY="$DEPLOYER_PRIVATE_KEY" pnpm --dir bots exec tsx src/seed-ladder.ts
+# unset DEPLOYER_PRIVATE_KEY BOT_PRIVATE_KEY
 ```
 
-`DEPLOYER_ADDRESS` is the account that owns the demo contracts and funds the seed market maker. The scripts write `deployments/10143.json`; verify the chain ID, contract addresses, and asset entries before publishing it. To include the optional vault, set `DEPLOY_VAULT=1` for Deploy when its artifact is present, then run Seed.
+`DEPLOYER_ADDRESS` is the account that owns the demo contracts and funds the seed market maker. The scripts write `deployments/10143.json`; verify the chain ID, contract addresses, and asset entries before publishing it. To include the optional vault, set `DEPLOY_VAULT=1` for Deploy when its artifact is present, then run Seed, then `seed-ladder.ts`. `SEED_VAULT=1` on Seed deposits into the vault and refreshes every open series (heavy; prefer the keeper).
 
 ### Verification pointers
 
@@ -72,7 +91,7 @@ Check the explorer and deployment manifest after deployment; no external verific
 
 ## Bots
 
-Install dependencies with pnpm. Both bots read `DEPLOYMENT` (default `deployments/31337.json`) and use `RPC_URL` when set, otherwise the manifest RPC. Write operations require `BOT_PRIVATE_KEY`, or `BOT_ADDRESS` for an account unlocked by the RPC node (or run in `--dry-run` mode). Keep keys in the environment or a Foundry keystore; the bots never print them.
+Install dependencies with pnpm. Bots read `DEPLOYMENT` (default `deployments/31337.json`) and use `RPC_URL` when set, otherwise the manifest RPC. Write operations require `BOT_PRIVATE_KEY`, or `BOT_ADDRESS` for an account unlocked by the RPC node (or run in `--dry-run` mode). Keep keys in the environment or a Foundry keystore; **never print, log, or pass private keys on the command line**.
 
 ```sh
 pnpm --dir bots install
@@ -87,8 +106,12 @@ pnpm --dir bots exec tsx src/price-bot.ts
 pnpm --dir bots exec tsx src/price-bot.ts --once
 pnpm --dir bots exec tsx src/price-bot.ts --dry-run --once
 
-# Checkpoints each asset, maintains the rolling ladder, resolves expired series,
-# and refreshes open vault series if the optional vault exists.
+# Canonical ladder (shared planner with the keeper). Chunks of 20 via Book.multicall.
+pnpm --dir bots exec tsx src/seed-ladder.ts
+pnpm --dir bots exec tsx src/seed-ladder.ts --dry-run
+
+# Checkpoints each asset (pool mode), maintains the rolling ladder, settles/resolves
+# expired series, and refreshes the closest-to-the-money vault series.
 pnpm --dir bots exec tsx src/keeper.ts
 pnpm --dir bots exec tsx src/keeper.ts --once
 pnpm --dir bots exec tsx src/keeper.ts --dry-run --once
@@ -96,7 +119,23 @@ pnpm --dir bots exec tsx src/keeper.ts --dry-run --once
 unset BOT_PRIVATE_KEY
 ```
 
-Set `PRICE_BOT_INTERVAL_MS` (default 4000), `PRICE_VOL` (default annualized 0.55), and `PRICE_SWAP_BPS` (default 3 bps of the input-side reserve; capped at 100 bps) to tune the clearly labelled DEMO price bot. `KEEPER_INTERVAL_MS` configures the keeper loop. For controlled local-only tests, `PRICE_BOT_BIAS=up|down` forces swap direction; normal operation defaults to the mean-reverting random walk.
+Set `PRICE_BOT_INTERVAL_MS` (default 4000), `PRICE_VOL` (default annualized 0.55), and `PRICE_SWAP_BPS` (default 3 bps of the input-side reserve; capped at 100 bps) to tune the clearly labelled DEMO price bot. For controlled local-only tests, `PRICE_BOT_BIAS=up|down` forces swap direction; normal operation defaults to the mean-reverting random walk.
+
+Keeper flags (structured one-line `component=keeper ...` logs; exit 0 on success, 1 on failure; at most one in-flight signer tx):
+
+| Env / flag | Default | Meaning |
+|---|---|---|
+| `KEEPER_MODE` | `pool` | `pool` = OracleHub.checkpoint + Book.resolve. `pyth` = Hermes update + `PythSettlementResolver.settle` then `Book.resolve`. |
+| `KEEPER_CREATE` | `1` | Create missing canonical series. `0` skips creation. |
+| `KEEPER_REFRESH_LIMIT` | `40` | Max vault `refresh` calls per tick, closest to the money first (`\|fairTick-50\|` from `Quoter.snapshots`). `0` skips. |
+| `KEEPER_INTERVAL_MS` | `15000` | Loop delay (no tight retry loop). |
+| `--once` | | Single tick, then exit. |
+| `--dry-run` | | Log intended writes; no transactions. |
+| `HERMES_URL` | `https://hermes.pyth.network` | Pyth Hermes REST (`/v2/updates/price/{unixTime}?ids[]={feedId}&encoding=hex&parsed=true`). |
+| `PYTH_ADDRESS` | Monad Pyth core | Used for `getUpdateFee` when the manifest has no `contracts.pyth`. |
+| `PYTH_FEED_<SYMBOL>` | table in `bots/src/pyth.ts` | Override a Pyth price-feed id. |
+
+`KEEPER_MODE=pyth` needs `contracts.pythSettlementResolver` (and ideally `pythOracle`) in the deployment manifest. Settlement looks up `settlements(assetId, expiry)` / `isSettled` (field names live in `PYTH_SETTLEMENT_FIELDS` in `bots/src/pyth.ts`). On `PriceFeedNotFoundWithinRange` the keeper retries publish times `expiry .. expiry+300` with exponential backoff and a hard cap; it never issues a second signer transaction until the previous receipt is in. Hermes HTTP is not exercised in offline tests — wire it against mainnet/Hermes before production.
 
 The price bot signer needs tUSDC and tMON/tNVDA to swap. Deploy mints a demo buffer to the account named by `BOT_PRIVATE_KEY` or `BOT_ADDRESS` when supplied during deployment; the mock tokens also expose public faucets. Keep swap sizes small relative to reserves.
 

@@ -7,6 +7,8 @@
   "scripts": {
     "price-bot": "tsx src/price-bot.ts",
     "keeper": "tsx src/keeper.ts",
+    "seed-ladder": "tsx src/seed-ladder.ts",
+    "dev-check": "tsx src/dev-check.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

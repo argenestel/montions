@@ -153,6 +153,7 @@ abstract contract BookTestBase is Test {
         liabilities += book.cash(BOB) + book.lockedCash(BOB);
         liabilities += book.cash(CAROL) + book.lockedCash(CAROL);
         liabilities += book.cash(DAVE) + book.lockedCash(DAVE);
-        assertEq(usdc.balanceOf(address(book)), liabilities);
+        assertEq(book.totalCollateral(), liabilities);
+        assertEq(usdc.balanceOf(address(book)), book.totalCollateral());
     }
 }

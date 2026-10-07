@@ -86,7 +86,8 @@ contract BookInvariantTest is Test {
             (bytes32 seriesId,) = handler.seriesAt(i);
             liabilities += book.pool(seriesId);
         }
-        assertEq(usdc.balanceOf(address(book)), liabilities);
+        assertEq(book.totalCollateral(), liabilities);
+        assertEq(usdc.balanceOf(address(book)), book.totalCollateral());
     }
 
     /// @notice Per-user locked cash equals collateral for their open orders.

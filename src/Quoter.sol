@@ -5,8 +5,8 @@ import {IQuoter} from "./interfaces/IQuoter.sol";
 import {IMontionsBook} from "./interfaces/IMontionsBook.sol";
 import {IPriceOracle} from "./interfaces/IPriceOracle.sol";
 import {IResolver} from "./interfaces/IResolver.sol";
-import {TwapThresholdResolver} from "./resolvers/TwapThresholdResolver.sol";
 import {PricingLib} from "./pricing/PricingLib.sol";
+import {Ownable} from "solady/auth/Ownable.sol";
 
 /// @title Quoter
 /// @notice Read-only outcome quotes and digital-option model for Montions.
@@ -15,17 +15,34 @@ import {PricingLib} from "./pricing/PricingLib.sol";
 ///      the demo relies on deep seeded pools, not a manipulation-resistant oracle.
 ///      Moving a pool during the last seconds of an idle window can influence its TWAP;
 ///      pool depth and longer windows mitigate this risk but do not eliminate it.
-contract Quoter is IQuoter {
+contract Quoter is IQuoter, Ownable {
     error OnlySelf();
+    error ZeroResolver();
     /// @notice Book supplying series metadata and aggregated depth.
     IMontionsBook public immutable book;
-    /// @notice Only this resolver's open series receive a model valuation.
+    /// @notice Initial resolver retained for deployment compatibility.
     address public immutable twapResolver;
+    /// @notice Resolvers whose data uses the common price-series ABI layout may receive fair-value models.
+    mapping(address resolver => bool allowed) public isPriceResolver;
 
-    /// @notice Configure the Book and supported price resolver.
+    event PriceResolverSet(address indexed resolver, bool allowed);
+
+    /// @notice Configure the Book and initial price resolver; ownership starts with the deployer.
     constructor(address book_, address twapResolver_) {
         book = IMontionsBook(book_);
         twapResolver = twapResolver_;
+        _initializeOwner(msg.sender);
+        if (twapResolver_ != address(0)) {
+            isPriceResolver[twapResolver_] = true;
+            emit PriceResolverSet(twapResolver_, true);
+        }
+    }
+
+    /// @notice Allow or disallow a resolver that uses the shared price-series data layout.
+    function setPriceResolver(address resolver, bool allowed) external onlyOwner {
+        if (resolver == address(0)) revert ZeroResolver();
+        isPriceResolver[resolver] = allowed;
+        emit PriceResolverSet(resolver, allowed);
     }
 
     /// @inheritdoc IQuoter
@@ -64,28 +81,26 @@ contract Quoter is IQuoter {
         view
         returns (uint8 fairTick, uint256 probWad, uint256 volWad, uint256 spotWad)
     {
-        if (info.status != IMontionsBook.Status.Open || info.resolver != twapResolver) return (0, 0, 0, 0);
-        try TwapThresholdResolver(twapResolver).decode(info.data) returns (
-            address oracle, bytes32 assetId, uint256 strike, bool above, uint32
-        ) {
-            try IPriceOracle(oracle).latestPrice(assetId) returns (uint256 spot, uint64) {
-                spotWad = spot;
-            } catch {
-                return (0, 0, 0, 0);
-            }
-            try IPriceOracle(oracle).realizedVol(assetId, 6 hours, 5 minutes) returns (uint256 vol) {
-                volWad = vol == 0 ? 0.8e18 : vol;
-                if (volWad < 0.3e18) volWad = 0.3e18;
-                if (volWad > 4e18) volWad = 4e18;
-            } catch {
-                return (0, 0, 0, 0);
-            }
-            uint256 remaining = info.expiry > block.timestamp ? info.expiry - block.timestamp : 0;
-            probWad = PricingLib.digitalProbWad(spotWad, strike, volWad, remaining, above);
-            fairTick = PricingLib.probToTick(probWad);
+        if (info.status != IMontionsBook.Status.Open || !isPriceResolver[info.resolver]) {
+            return (0, 0, 0, 0);
+        }
+        (address oracle, bytes32 assetId, uint256 strike, bool above,) =
+            abi.decode(info.data, (address, bytes32, uint256, bool, uint32));
+        try IPriceOracle(oracle).latestPrice(assetId) returns (uint256 spot, uint64) {
+            spotWad = spot;
         } catch {
             return (0, 0, 0, 0);
         }
+        try IPriceOracle(oracle).realizedVol(assetId, 6 hours, 5 minutes) returns (uint256 vol) {
+            volWad = vol == 0 ? 0.8e18 : vol;
+            if (volWad < 0.3e18) volWad = 0.3e18;
+            if (volWad > 4e18) volWad = 4e18;
+        } catch {
+            return (0, 0, 0, 0);
+        }
+        uint256 remaining = info.expiry > block.timestamp ? info.expiry - block.timestamp : 0;
+        probWad = PricingLib.digitalProbWad(spotWad, strike, volWad, remaining, above);
+        fairTick = PricingLib.probToTick(probWad);
     }
 
     /// @inheritdoc IQuoter

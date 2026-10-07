@@ -14,6 +14,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { requirePool } from "./runtime.js";
 import { erc20Abi, montionsBookAbi } from "../../sdk/src/abi/index.js";
 import { MontionsClient } from "../../sdk/src/client.js";
 import { parseDeployment } from "../../sdk/src/deployments.js";
@@ -87,7 +88,13 @@ async function runKeeperOnce(): Promise<void> {
   const result = spawnSync("pnpm", ["--dir", "bots", "exec", "tsx", "src/keeper.ts", "--once"], {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, DEPLOYMENT: manifestPath, RPC_URL: rpcUrl },
+    env: {
+      ...process.env,
+      DEPLOYMENT: manifestPath,
+      RPC_URL: rpcUrl,
+      KEEPER_CREATE: "0",
+      KEEPER_REFRESH_LIMIT: "0",
+    },
   });
   if (result.error) throw result.error;
   assert(result.status === 0, "keeper --once exited successfully");
@@ -113,7 +120,7 @@ async function main(): Promise<void> {
   const spotPoolAbi = [
     { type: "function", name: "priceWad", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   ] as const;
-  const spot = await publicClient.readContract({ address: mon.pool, abi: spotPoolAbi, functionName: "priceWad" });
+  const spot = await publicClient.readContract({ address: requirePool(mon), abi: spotPoolAbi, functionName: "priceWad" });
   const strike = (spot * 1_002n) / 1_000n;
   const currentBlock = await publicClient.getBlock();
   const expiry = currentBlock.timestamp + 130n;
@@ -182,10 +189,10 @@ async function main(): Promise<void> {
   await rpc("anvil_mine", ["0x1"]);
   for (let attempt = 0; attempt < 4; attempt++) {
     await runPriceBotUp();
-    const movedSpot = await publicClient.readContract({ address: mon.pool, abi: spotPoolAbi, functionName: "priceWad" });
+    const movedSpot = await publicClient.readContract({ address: requirePool(mon), abi: spotPoolAbi, functionName: "priceWad" });
     if (movedSpot > strike) break;
   }
-  const finalSpot = await publicClient.readContract({ address: mon.pool, abi: spotPoolAbi, functionName: "priceWad" });
+  const finalSpot = await publicClient.readContract({ address: requirePool(mon), abi: spotPoolAbi, functionName: "priceWad" });
   assert(finalSpot > strike, "DEMO price-bot swaps move MON spot above the test strike");
 
   const expiryBlock = await publicClient.getBlock();

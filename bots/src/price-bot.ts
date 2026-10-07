@@ -3,7 +3,7 @@ import {
   type Hex,
 } from "viem";
 import { erc20Abi } from "../../sdk/src/abi/erc20.js";
-import { addressAt, hasFlag, isDryRun, loadBotContext, sendAndWait } from "./runtime.js";
+import { addressAt, hasFlag, isDryRun, loadBotContext, sendAndWait, requirePool, requireToken } from "./runtime.js";
 import { meanRevertingLogStep, standardNormal } from "./priceWalk.js";
 
 const poolAbi = [
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   const quoteAddress = collateral;
 
   for (const asset of deployment.assets) {
-    const current = await publicClient.readContract({ address: asset.pool, abi: poolAbi, functionName: "priceWad" });
+    const current = await publicClient.readContract({ address: requirePool(asset), abi: poolAbi, functionName: "priceWad" });
     const logPrice = Math.log(Number(current) / 1e18);
     states.set(asset.symbol, { anchor: logPrice, logPrice, lastTime: Date.now() / 1000 });
   }
@@ -64,8 +64,8 @@ async function main(): Promise<void> {
   do {
     const wallNow = Date.now() / 1000;
     for (const asset of deployment.assets) {
-      const pool = asset.pool;
-      const baseAddress = asset.token;
+      const pool = requirePool(asset);
+      const baseAddress = requireToken(asset);
       const baseReserve = await publicClient.readContract({ address: pool, abi: poolAbi, functionName: "baseReserve" });
       const quoteReserve = await publicClient.readContract({ address: pool, abi: poolAbi, functionName: "quoteReserve" });
       const spot = await publicClient.readContract({ address: pool, abi: poolAbi, functionName: "priceWad" });

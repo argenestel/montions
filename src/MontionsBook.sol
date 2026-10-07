@@ -8,11 +8,12 @@ import {TickBitmap} from "./libs/TickBitmap.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {ReentrancyGuard} from "solady/utils/ReentrancyGuard.sol";
 import {Multicallable} from "solady/utils/Multicallable.sol";
+import {Ownable} from "solady/auth/Ownable.sol";
 
 /// @title MontionsBook
 /// @notice Fully collateralized binary outcome series and onchain price-time CLOB.
 /// @dev Matching and internal outcome-token movements make no external calls.
-contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multicallable {
+contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multicallable, Ownable {
     using TickBitmap for uint128;
 
     /// @notice Collateral units paid per winning contract.
@@ -33,16 +34,23 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     uint8 private constant _TRADE_RING_SIZE = 64;
     uint256 private constant _RESOLVE_GAS = 500_000;
 
-    /// @notice Six-decimal collateral token deposited into the Book.
+    /// @notice Six-decimal exact-transfer, non-rebasing collateral token deposited into the Book.
+    /// @dev Decimal count is checked at construction; exact transfer is checked on each deposit.
     address public immutable override collateral;
-    /// @notice Administrator limited to resolver and fee configuration.
-    address public override owner;
     /// @notice Taker fee in basis points, capped at 100.
     uint16 public override takerFeeBps;
     /// @notice Accrued fee collateral awaiting withdrawal.
     uint256 public override protocolFees;
     /// @notice Destination used by permissionless fee withdrawal.
     address public feeRecipient;
+    /// @notice True when operations that add new risk are paused.
+    bool public paused;
+    /// @notice Maximum collateral tracked by the Book. Lowering below usage only blocks new deposits.
+    uint256 public collateralCap = type(uint256).max;
+    /// @notice Maximum collateral pool for any one series. Lowering below usage only blocks new pair risk.
+    uint256 public seriesPoolCap = type(uint256).max;
+    /// @notice Running sum of user cash, locked cash, series pools, and protocol fees.
+    uint256 public totalCollateral;
 
     /// @notice User free collateral available for orders and withdrawal.
     mapping(address user => uint256 amount) public override cash;
@@ -91,7 +99,6 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     mapping(bytes32 seriesId => uint8 tick) private _lastTradeTick;
     mapping(bytes32 seriesId => uint256 contractsTraded) private _volume;
 
-    error UnauthorizedOwner();
     error ResolverValidationFailed();
     error BadFeeRecipient();
     error NotAuthorized();
@@ -99,15 +106,66 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     error DataTooLong(uint256 length);
     error MaxFillsTooHigh(uint16 maxFills);
     error CollateralTransferMismatch(uint256 expected, uint256 received);
+    error InvalidCollateralDecimals();
+    error Paused();
+    error CollateralCapExceeded();
+    error SeriesCapExceeded();
+    error TwoStepOwnershipRequired();
+    error OwnershipRenunciationDisabled();
+    error NativeTransferRejected();
+
+    /// @notice Emitted when new-risk operations are paused or resumed.
+    event PausedSet(bool paused);
+    /// @notice Emitted when the aggregate collateral cap changes.
+    event CollateralCapSet(uint256 cap);
+    /// @notice Emitted when the per-series pool cap changes.
+    event SeriesPoolCapSet(uint256 cap);
+    /// @notice Emitted when native currency is swept from the Book.
+    event NativeSwept(address indexed to, uint256 amount);
 
     /// @notice Deploys the Book for a collateral token and initial administrator.
     /// @param collateral_ Six-decimal ERC20 collateral used for deposits and payouts.
     /// @param owner_ Initial administrator for resolver and fee configuration.
     constructor(address collateral_, address owner_) {
         if (collateral_ == address(0) || owner_ == address(0)) revert ZeroAddress();
+        (bool decimalsOk, bytes memory decimalsResult) =
+            collateral_.staticcall(abi.encodeWithSelector(IERC20Decimals.decimals.selector));
+        if (!decimalsOk || decimalsResult.length < 32 || abi.decode(decimalsResult, (uint256)) != 6) {
+            revert InvalidCollateralDecimals();
+        }
         collateral = collateral_;
-        owner = owner_;
+        _initializeOwner(owner_);
         feeRecipient = owner_;
+    }
+
+    /// @notice Returns the current owner (Solady Ownable compatibility with IMontionsBook).
+    function owner() public view override(IMontionsBook, Ownable) returns (address) {
+        return Ownable.owner();
+    }
+
+    /// @notice Disables Solady's direct one-step ownership transfer; use the handover flow.
+    function transferOwnership(address) public payable override onlyOwner {
+        revert TwoStepOwnershipRequired();
+    }
+
+    /// @notice Disables renunciation so administrative safety controls cannot be stranded.
+    function renounceOwnership() public payable override onlyOwner {
+        revert OwnershipRenunciationDisabled();
+    }
+
+    /// @notice Requests a two-step ownership handover as the prospective owner.
+    function requestOwnershipHandover() public payable override nonReentrant {
+        Ownable.requestOwnershipHandover();
+    }
+
+    /// @notice Cancels the caller's pending ownership handover request.
+    function cancelOwnershipHandover() public payable override nonReentrant {
+        Ownable.cancelOwnershipHandover();
+    }
+
+    /// @notice Completes the requested two-step ownership handover.
+    function completeOwnershipHandover(address pendingOwner) public payable override onlyOwner nonReentrant {
+        Ownable.completeOwnershipHandover(pendingOwner);
     }
 
     /// @notice Allows or disallows a resolver for permissionless series creation.
@@ -125,7 +183,51 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         if (takerFeeBps_ > 100) revert FeeTooHigh();
         if (takerFeeBps_ != 0 && recipient == address(0)) revert BadFeeRecipient();
         takerFeeBps = takerFeeBps_;
-        feeRecipient = recipient == address(0) ? owner : recipient;
+        feeRecipient = recipient == address(0) ? owner() : recipient;
+    }
+
+    /// @notice Pauses or resumes operations that add new risk. Exits are never paused.
+    /// @param paused_ True to pause create, trade, split, and deposits.
+    function setPaused(bool paused_) external onlyOwner nonReentrant {
+        paused = paused_;
+        emit PausedSet(paused_);
+    }
+
+    /// @notice Sets the maximum aggregate collateral the Book may account for.
+    /// @dev A cap below current usage is allowed and only blocks future deposits.
+    function setCollateralCap(uint256 cap) external onlyOwner nonReentrant {
+        collateralCap = cap;
+        emit CollateralCapSet(cap);
+    }
+
+    /// @notice Sets the maximum pool amount per series.
+    /// @dev A cap below current usage is allowed and only blocks future pair creation.
+    function setSeriesPoolCap(uint256 cap) external onlyOwner nonReentrant {
+        seriesPoolCap = cap;
+        emit SeriesPoolCapSet(cap);
+    }
+
+    /// @notice Returns the aggregate and per-series collateral caps.
+    /// @return collateralCap_ Maximum aggregate tracked collateral.
+    /// @return seriesPoolCap_ Maximum collateral pool in one series.
+    function caps() external view returns (uint256 collateralCap_, uint256 seriesPoolCap_) {
+        return (collateralCap, seriesPoolCap);
+    }
+
+    /// @notice Withdraws all accidentally received native currency, never ERC20 collateral or outcomes.
+    /// @param to Destination for the native balance.
+    function sweepNative(address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+        uint256 amount = address(this).balance;
+        SafeTransferLib.safeTransferETH(to, amount);
+        emit NativeSwept(to, amount);
+    }
+
+    /// @notice Rejects plain native transfers; payable multicall can still receive native currency.
+    /// @dev A nonpayable fallback is used instead of `receive()` to keep the contract type
+    ///      nonpayable for existing deploy scripts; empty-calldata value transfers still revert.
+    fallback() external {
+        revert NativeTransferRejected();
     }
 
     /// @notice Withdraws accrued fees to the configured fee recipient.
@@ -135,12 +237,14 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         if (amount == 0) return;
         address recipient = feeRecipient;
         protocolFees = 0;
+        totalCollateral -= amount;
         SafeTransferLib.safeTransfer(collateral, recipient, amount);
     }
 
     /// @notice Deposits collateral into the caller's free cash account.
     /// @param amount Collateral amount in the token's smallest unit.
     function deposit(uint256 amount) external override nonReentrant {
+        if (paused) revert Paused();
         _depositCollateral(msg.sender, amount);
     }
 
@@ -155,6 +259,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         override
         nonReentrant
     {
+        if (paused) revert Paused();
         IERC20Permit(collateral).permit(msg.sender, address(this), amount, deadline, v, r, s);
         _depositCollateral(msg.sender, amount);
     }
@@ -166,6 +271,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         if (available < amount) revert InsufficientCash();
         unchecked {
             cash[msg.sender] = available - amount;
+            totalCollateral -= amount;
         }
         SafeTransferLib.safeTransfer(collateral, msg.sender, amount);
         emit Withdraw(msg.sender, amount);
@@ -196,6 +302,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         nonReentrant
         returns (bytes32 seriesId)
     {
+        if (paused) revert Paused();
         if (data.length > 512) revert DataTooLong(data.length);
         if (!resolverAllowed[resolver] || resolver.code.length == 0) revert ResolverNotAllowed();
         if (expiry < block.timestamp + MIN_DURATION || expiry > block.timestamp + MAX_DURATION) revert BadExpiry();
@@ -268,7 +375,10 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     ///      collateral consumed across all fills. Bids and write-Asks reserve the maximum fee up front and
     ///      release the unused reserve when the taker phase ends; held-token sellers pay from proceeds.
     ///      At the `maxFills` bound, a still-crossing GTC remainder is refunded and returned with
-    ///      `resting == 0`; only a non-crossing remainder joins the book.
+    ///      `resting == 0`; only a non-crossing remainder joins the book. A pair-minting fill is
+    ///      truncated to remaining whole-contract series-cap capacity, then matching stops. The
+    ///      remainder follows normal TIF handling: a still-crossing GTC remainder is refunded,
+    ///      while a non-crossing GTC remainder may rest.
     /// @param p Order series, side, limit, quantity, time-in-force, and fill bound.
     /// @return orderId Sequential id assigned to this submission.
     /// @return filled Contracts matched immediately.
@@ -279,6 +389,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         nonReentrant
         returns (uint64 orderId, uint64 filled, uint64 resting)
     {
+        if (paused) revert Paused();
         _prepareOrder(p);
         orderId = _recordIncoming(p);
         uint256 takerCollateralConsumed;
@@ -341,6 +452,8 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         returns (uint64 filled, uint64 remaining, uint256 takerCollateralConsumed)
     {
         remaining = p.qty;
+        // Lazy initialization avoids cap reads on orders that do not reach a pair-minting match.
+        uint256 pairCapacity = type(uint256).max;
         uint16 maxFills = p.maxFills == 0 ? _DEFAULT_MAX_FILLS : p.maxFills;
         uint16 attempts;
         while (remaining != 0 && attempts < maxFills) {
@@ -353,10 +466,22 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
                 ++attempts;
                 continue;
             }
-            uint64 fillQty = _matchCandidate(p, makerId, makerTick, remaining);
+            uint64 fillLimit = remaining;
+            bool createsPair = !p.fromHeld && !maker.fromHeld;
+            if (createsPair) {
+                if (pairCapacity == type(uint256).max) {
+                    uint256 currentPool = pool[p.seriesId];
+                    uint256 cap = seriesPoolCap;
+                    pairCapacity = currentPool >= cap ? 0 : (cap - currentPool) / UNIT;
+                }
+                if (pairCapacity == 0) break;
+                if (pairCapacity < fillLimit) fillLimit = uint64(pairCapacity);
+            }
+            uint64 fillQty = _matchCandidate(p, makerId, makerTick, fillLimit);
             remaining -= fillQty;
             filled += fillQty;
             takerCollateralConsumed += _takerCollateralConsumed(p, makerTick, fillQty);
+            if (createsPair) pairCapacity -= fillQty;
             ++attempts;
         }
     }
@@ -410,12 +535,14 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     /// @param seriesId Open series id.
     /// @param qty Number of paired contracts to create.
     function split(bytes32 seriesId, uint64 qty) external override nonReentrant {
+        if (paused) revert Paused();
         SeriesInfo storage info = _series[seriesId];
         if (info.status == Status.None) revert SeriesUnknown();
         if (info.status != Status.Open) revert SeriesNotOpen();
         if (block.timestamp >= info.expiry) revert Expired();
         if (qty == 0 || qty > _MAX_ORDER_QTY) revert BadQty();
         uint256 amount = uint256(qty) * UNIT;
+        if (amount > seriesPoolCap || pool[seriesId] > seriesPoolCap - amount) revert SeriesCapExceeded();
         uint256 free = cash[msg.sender];
         if (free < amount) revert InsufficientCash();
         unchecked {
@@ -727,7 +854,9 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         override(IMontionsBook, Multicallable)
         returns (bytes[] memory results)
     {
-        return Multicallable.multicall(data);
+        // Keep Solady's delegatecall batching while permitting accidental native value to be
+        // recovered later with sweepNative. Inner nonpayable functions still reject msg.value.
+        return _multicallResultsToBytesArray(_multicall(data));
     }
 
     function _executeFill(PlaceParams calldata p, uint64 makerId, uint64 qty, uint8 price, bool takerIsBuyer) private {
@@ -1028,12 +1157,17 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     }
 
     function _depositCollateral(address account, uint256 amount) private {
+        if (paused) revert Paused();
+        if (totalCollateral > collateralCap || amount > collateralCap - totalCollateral) {
+            revert CollateralCapExceeded();
+        }
         uint256 beforeBalance = IERC20Balance(collateral).balanceOf(address(this));
         SafeTransferLib.safeTransferFrom(collateral, account, address(this), amount);
         uint256 afterBalance = IERC20Balance(collateral).balanceOf(address(this));
         uint256 received = afterBalance >= beforeBalance ? afterBalance - beforeBalance : 0;
         if (received != amount) revert CollateralTransferMismatch(amount, received);
         cash[account] += amount;
+        totalCollateral += amount;
         emit Deposit(account, amount);
     }
 
@@ -1065,11 +1199,6 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
             open: order.open
         });
     }
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert UnauthorizedOwner();
-        _;
-    }
 }
 
     interface IERC20Permit {
@@ -1079,4 +1208,8 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
 
     interface IERC20Balance {
         function balanceOf(address account) external view returns (uint256);
+    }
+
+    interface IERC20Decimals {
+        function decimals() external view returns (uint8);
     }

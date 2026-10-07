@@ -849,6 +849,10 @@ contract FeeOnTransferCollateral {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
+    function decimals() external pure returns (uint8) {
+        return 6;
+    }
+
     function mint(address to, uint256 amount) external {
         balanceOf[to] += amount;
     }

@@ -6,43 +6,28 @@ import {stdJson} from "forge-std/StdJson.sol";
 import {IMontionsBook} from "../src/interfaces/IMontionsBook.sol";
 import {IQuoter} from "../src/interfaces/IQuoter.sol";
 import {TestUSDC} from "../src/mocks/TestUSDC.sol";
-import {SpotPool} from "../src/oracle/SpotPool.sol";
-import {OracleHub} from "../src/oracle/OracleHub.sol";
-import {TwapThresholdResolver} from "../src/resolvers/TwapThresholdResolver.sol";
 
 interface ISeedVault {
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
     function refresh(bytes32 seriesId) external;
 }
 
-/// @notice Seeds the rolling demo ladder, maker liquidity, and optional vault.
+/// @notice Seeds maker cash (and optional vault). The canonical series ladder is created by
+///         `pnpm --dir bots exec tsx src/seed-ladder.ts` so expiries stay UTC-aligned and idempotent.
 /// @dev Price-series outcomes read the MOCK/DEMO pool TWAP. The oracle is manipulable;
 ///      deep reserves and the configured TWAP window mitigate but never eliminate that risk.
 contract Seed is Script {
     using stdJson for string;
 
-    uint64 private constant _WINDOW = 60;
     uint64 private constant _MAKER_QTY = 10;
     uint256 private constant _MARKET_MAKER_CASH = 2_000e6;
-    uint256 private constant _CREATE_BATCH_SIZE = 12;
-    uint256[6] private _durations = [uint256(15 minutes), 1 hours, 4 hours, 1 days, 3 days, 7 days];
-    uint16[9] private _strikeBps = [uint16(8_000), 9_000, 9_500, 10_000, 10_500, 11_000, 12_000, 13_500, 15_000];
+    uint256 private constant _MAX_SEEDED_MARKETS = 2;
 
     struct SeedContracts {
         IMontionsBook book;
         IQuoter quoter;
         TestUSDC collateral;
-        OracleHub hub;
-        TwapThresholdResolver resolver;
         address vault;
-        address[2] tokens;
-    }
-
-    struct LadderConfig {
-        SeedContracts contracts_;
-        bytes32[2] assetIds;
-        uint64[6] expiries;
-        uint256[2] grids;
     }
 
     function run() external {
@@ -58,101 +43,45 @@ contract Seed is Script {
             string.concat("./deployments/", vm.toString(block.chainid), ".json")
         );
         SeedContracts memory c = _loadContracts(vm.readFile(path));
-        LadderConfig memory config;
-        config.contracts_ = c;
-        config.assetIds = [keccak256("MON"), keccak256("NVDA")];
-        config.grids = [uint256(5e16), uint256(25e17)]; // $0.05 MON / $2.50 NVDA.
-        for (uint256 i; i < _durations.length; ++i) {
-            config.expiries[i] = _roundExpiry(uint64(block.timestamp + _durations[i]));
-        }
-
-        uint256 created = _createLadder(config);
-        _seedMakerMarkets(config, deployer);
+        uint256 markets = _seedMakerMarkets(c, deployer);
         // Vault seeding (deposit + a refresh per series) is far too heavy for one forge simulation; by default the keeper
         // refreshes series one transaction at a time. Set SEED_VAULT=1 to force it here (e.g. on a tiny ladder).
         if (c.vault != address(0) && vm.envOr("SEED_VAULT", uint256(0)) == 1) _seedVault(c, deployer);
         vm.stopBroadcast();
-        emit LadderSeeded(108, created, c.vault);
+        emit MakerSeeded(markets, c.vault);
     }
 
     function _loadContracts(string memory manifest) private view returns (SeedContracts memory c) {
         c.book = IMontionsBook(manifest.readAddress(".contracts.book"));
         c.quoter = IQuoter(manifest.readAddress(".contracts.quoter"));
         c.collateral = TestUSDC(manifest.readAddress(".contracts.collateral"));
-        c.hub = OracleHub(manifest.readAddress(".contracts.oracleHub"));
-        c.resolver = TwapThresholdResolver(manifest.readAddress(".contracts.twapResolver"));
         c.vault = manifest.readAddressOr(".contracts.vault", address(0));
-        c.tokens = [manifest.readAddress(".contracts.monToken"), manifest.readAddress(".contracts.nvdaToken")];
     }
 
-    function _createLadder(LadderConfig memory config) private returns (uint256 created) {
-        bytes[] memory calls = new bytes[](108);
-        for (uint256 asset; asset < 2; ++asset) {
-            created = _appendAssetCalls(config, asset, calls, created);
-        }
-        for (uint256 offset; offset < created; offset += _CREATE_BATCH_SIZE) {
-            uint256 length = created - offset;
-            if (length > _CREATE_BATCH_SIZE) length = _CREATE_BATCH_SIZE;
-            config.contracts_.book.multicall(_slice(calls, offset, length));
-        }
-    }
-
-    function _appendAssetCalls(LadderConfig memory config, uint256 asset, bytes[] memory calls, uint256 count)
-        private
-        view
-        returns (uint256)
-    {
-        uint256 spot = SpotPool(config.contracts_.hub.poolOf(config.assetIds[asset])).priceWad();
-        for (uint256 expiryIndex; expiryIndex < 6; ++expiryIndex) {
-            for (uint256 strikeIndex; strikeIndex < _strikeBps.length; ++strikeIndex) {
-                uint256 rawStrike = (spot * _strikeBps[strikeIndex]) / 10_000;
-                uint256 strike = _roundToGrid(rawStrike, config.grids[asset]);
-                bytes memory data = abi.encode(
-                    address(config.contracts_.hub), config.assetIds[asset], strike, true, uint32(_WINDOW)
-                );
-                bytes32 id = config.contracts_.book.seriesIdOf(
-                    address(config.contracts_.resolver), data, config.expiries[expiryIndex]
-                );
-                if (!_seriesExists(config.contracts_.book, id)) {
-                    calls[count++] = abi.encodeCall(
-                        IMontionsBook.createSeries,
-                        (address(config.contracts_.resolver), data, config.expiries[expiryIndex])
-                    );
-                }
-            }
-        }
-        return count;
-    }
-
-    function _seriesExists(IMontionsBook book, bytes32 id) private view returns (bool) {
-        try book.seriesInfo(id) returns (IMontionsBook.SeriesInfo memory info) {
-            return info.status != IMontionsBook.Status.None;
-        } catch {
-            return false;
-        }
-    }
-
-    function _seedMakerMarkets(LadderConfig memory config, address maker) private {
-        SeedContracts memory c = config.contracts_;
+    function _seedMakerMarkets(SeedContracts memory c, address maker) private returns (uint256 seeded) {
         c.collateral.mint(maker, _MARKET_MAKER_CASH);
         c.collateral.approve(address(c.book), type(uint256).max);
         c.book.deposit(_MARKET_MAKER_CASH);
-        for (uint256 asset; asset < 2; ++asset) {
-            uint256 spot = SpotPool(c.hub.poolOf(config.assetIds[asset])).priceWad();
-            uint256 strike = _roundToGrid(spot, config.grids[asset]);
-            bytes memory data = abi.encode(address(c.hub), config.assetIds[asset], strike, true, uint32(_WINDOW));
-            bytes32 id = c.book.seriesIdOf(address(c.resolver), data, config.expiries[0]);
+        uint256 count = c.book.seriesCount();
+        for (uint256 i; i < count && seeded < _MAX_SEEDED_MARKETS; ++i) {
+            bytes32 id = c.book.seriesIdAt(i);
+            IMontionsBook.SeriesInfo memory info = c.book.seriesInfo(id);
+            if (info.status != IMontionsBook.Status.Open) continue;
             (uint8 fairTick,,,) = c.quoter.fair(id);
             if (fairTick == 0) fairTick = 50;
             uint8 bidTick = fairTick > 4 ? fairTick - 4 : 1;
             uint8 askTick = fairTick < 95 ? fairTick + 4 : 99;
             c.book.placeOrder(_order(id, IMontionsBook.Side.Bid, bidTick));
             c.book.placeOrder(_order(id, IMontionsBook.Side.Ask, askTick));
-            emit SeededMarket(asset == 0 ? "MON" : "NVDA", id, fairTick, bidTick, askTick);
+            emit SeededMarket("series", id, fairTick, bidTick, askTick);
+            unchecked {
+                ++seeded;
+            }
         }
     }
 
     function _seedVault(SeedContracts memory c, address depositor) private {
+        c.collateral.mint(depositor, _MARKET_MAKER_CASH);
         c.collateral.approve(c.vault, type(uint256).max);
         ISeedVault(c.vault).deposit(_MARKET_MAKER_CASH, depositor);
         uint256 count = c.book.seriesCount();
@@ -180,23 +109,6 @@ contract Seed is Script {
         });
     }
 
-    function _roundExpiry(uint64 timestamp) private pure returns (uint64) {
-        return uint64(((uint256(timestamp) + 299) / 300) * 300);
-    }
-
-    function _roundToGrid(uint256 value, uint256 grid) private pure returns (uint256) {
-        return ((value + grid / 2) / grid) * grid;
-    }
-
-    function _slice(bytes[] memory values, uint256 offset, uint256 length)
-        private
-        pure
-        returns (bytes[] memory result)
-    {
-        result = new bytes[](length);
-        for (uint256 i; i < length; ++i) result[i] = values[offset + i];
-    }
-
     event SeededMarket(string symbol, bytes32 indexed seriesId, uint8 fairTick, uint8 bidTick, uint8 askTick);
-    event LadderSeeded(uint256 planned, uint256 created, address vault);
+    event MakerSeeded(uint256 markets, address vault);
 }

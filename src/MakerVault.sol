@@ -71,6 +71,10 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     address public trustedResolver;
     /// @notice When true, `refresh` only cancels and never reposts.
     bool public quotingPaused;
+    /// @notice When true, deposits and mints are blocked while withdrawals remain available.
+    bool public depositsPaused;
+    /// @notice Maximum NAV after a deposit or mint. Lowering below current NAV only blocks new deposits.
+    uint256 public maxTotalAssets = type(uint256).max;
 
     /// @notice Per-series worst-case exposure cap in bps of NAV.
     uint16 public maxSeriesExposureBps = HARD_MAX_SERIES_EXPOSURE_BPS;
@@ -99,13 +103,15 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     error DepositMoreThanMax();
     error MintMoreThanMax();
     error SeriesNotSettled();
+    error VaultCapExceeded();
+    error DepositsPaused();
+    error TwoStepOwnershipRequired();
+    error OwnershipRenunciationDisabled();
 
     /// @notice Emitted on ERC4626-style deposit or mint.
     event Deposit(address indexed by, address indexed owner, uint256 assets, uint256 shares);
     /// @notice Emitted on ERC4626-style withdraw or redeem.
-    event Withdraw(
-        address indexed by, address indexed to, address indexed owner, uint256 assets, uint256 shares
-    );
+    event Withdraw(address indexed by, address indexed to, address indexed owner, uint256 assets, uint256 shares);
     /// @notice Emitted when the keeper address changes.
     event KeeperSet(address indexed keeper);
     /// @notice Emitted when exposure / free-cash caps change.
@@ -114,6 +120,10 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     event TrustedResolverSet(address indexed resolver);
     /// @notice Emitted when quoting is paused or resumed.
     event QuotingPausedSet(bool paused);
+    /// @notice Emitted when deposits are paused or resumed.
+    event DepositsPausedSet(bool paused);
+    /// @notice Emitted when the total-assets cap changes.
+    event MaxTotalAssetsSet(uint256 maxTotalAssets);
     /// @notice Emitted after a refresh attempt.
     event Refreshed(bytes32 indexed seriesId, bool quoted, uint8 posted);
     /// @notice Emitted when settled inventory is redeemed into Book cash.
@@ -131,6 +141,16 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
         asset = col;
         _initializeOwner(owner_);
         SafeTransferLib.safeApprove(col, book_, type(uint256).max);
+    }
+
+    /// @notice Disables Solady's direct one-step ownership transfer; use the handover flow.
+    function transferOwnership(address) public payable override onlyOwner {
+        revert TwoStepOwnershipRequired();
+    }
+
+    /// @notice Disables renunciation so administrative safety controls cannot be stranded.
+    function renounceOwnership() public payable override onlyOwner {
+        revert OwnershipRenunciationDisabled();
     }
 
     function name() public pure override returns (string memory) {
@@ -184,6 +204,19 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
         emit QuotingPausedSet(paused);
     }
 
+    /// @notice Pauses or resumes ERC4626 deposits and mints; withdrawals are never paused.
+    function setDepositsPaused(bool paused) external onlyOwner {
+        depositsPaused = paused;
+        emit DepositsPausedSet(paused);
+    }
+
+    /// @notice Sets the maximum total NAV accepted by deposits and mints.
+    /// @dev Lowering the cap below current NAV is allowed and only blocks new deposits.
+    function setMaxTotalAssets(uint256 cap) external onlyOwner {
+        maxTotalAssets = cap;
+        emit MaxTotalAssetsSet(cap);
+    }
+
     // ───────────────────────── ERC4626 surface ─────────────────────────
 
     /// @notice NAV in collateral units: idle USDC + Book free + Book locked + conservative inventory.
@@ -228,14 +261,19 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
         return convertToAssets(shares);
     }
 
-    /// @notice Unlimited deposits.
-    function maxDeposit(address) public pure returns (uint256) {
-        return type(uint256).max;
+    /// @notice Maximum assets this receiver may deposit without exceeding the cap or pause.
+    function maxDeposit(address) public view returns (uint256) {
+        if (depositsPaused) return 0;
+        uint256 nav = totalAssets();
+        if (nav >= maxTotalAssets) return 0;
+        return maxTotalAssets - nav;
     }
 
-    /// @notice Unlimited mints.
-    function maxMint(address) public pure returns (uint256) {
-        return type(uint256).max;
+    /// @notice Maximum shares this receiver may mint without exceeding the cap or pause.
+    function maxMint(address receiver) public view returns (uint256) {
+        if (depositsPaused) return 0;
+        if (maxTotalAssets == type(uint256).max) return type(uint256).max;
+        return convertToShares(maxDeposit(receiver));
     }
 
     /// @notice Max assets `owner_` can withdraw: min of share value and currently liquid USDC
@@ -258,7 +296,8 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     function deposit(uint256 assets_, address receiver) external nonReentrant returns (uint256 shares) {
         if (receiver == address(0)) revert ZeroAddress();
         if (assets_ == 0) revert ZeroAmount();
-        if (assets_ > maxDeposit(receiver)) revert DepositMoreThanMax();
+        if (depositsPaused) revert DepositsPaused();
+        if (assets_ > maxDeposit(receiver)) revert VaultCapExceeded();
         shares = previewDeposit(assets_);
         if (shares == 0) revert ZeroAmount();
         _deposit(msg.sender, receiver, assets_, shares);
@@ -268,7 +307,8 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     function mint(uint256 shares, address receiver) external nonReentrant returns (uint256 assets_) {
         if (receiver == address(0)) revert ZeroAddress();
         if (shares == 0) revert ZeroAmount();
-        if (shares > maxMint(receiver)) revert MintMoreThanMax();
+        if (depositsPaused) revert DepositsPaused();
+        if (shares > maxMint(receiver)) revert VaultCapExceeded();
         assets_ = previewMint(shares);
         if (assets_ == 0) revert ZeroAmount();
         _deposit(msg.sender, receiver, assets_, shares);
@@ -289,11 +329,7 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     }
 
     /// @notice Redeem exactly `shares` from `owner_`, sending assets to `receiver`.
-    function redeem(uint256 shares, address receiver, address owner_)
-        external
-        nonReentrant
-        returns (uint256 assets_)
-    {
+    function redeem(uint256 shares, address receiver, address owner_) external nonReentrant returns (uint256 assets_) {
         if (receiver == address(0) || owner_ == address(0)) revert ZeroAddress();
         if (shares == 0) revert ZeroAmount();
         if (shares > balanceOf(owner_)) revert RedeemMoreThanMax();
@@ -399,11 +435,7 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     }
 
     /// @notice Unique bid/ask ticks for a fair value and half-spread, clamped to 1..99.
-    function ladderTicks(uint8 fairTick, uint8 hs)
-        public
-        pure
-        returns (uint8[] memory bids, uint8[] memory asks)
-    {
+    function ladderTicks(uint8 fairTick, uint8 hs) public pure returns (uint8[] memory bids, uint8[] memory asks) {
         uint8[3] memory rawBids;
         uint8[3] memory rawAsks;
         for (uint8 i; i < LEVELS; ++i) {
@@ -416,11 +448,7 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     // ───────────────────────── ERC1155 receiver ─────────────────────────
 
     /// @notice Accept Book outcome tokens. Fills themselves do not invoke this hook.
-    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
         return this.onERC1155Received.selector;
     }
 
@@ -442,6 +470,7 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
 
     function _deposit(address by, address to, uint256 assets_, uint256 shares) internal {
         SafeTransferLib.safeTransferFrom(asset, by, address(this), assets_);
+        if (totalAssets() > maxTotalAssets) revert VaultCapExceeded();
         _mint(to, shares);
         _depositToBook();
         emit Deposit(by, to, assets_, shares);
@@ -471,8 +500,8 @@ contract MakerVault is ERC20, Ownable, ReentrancyGuard {
     }
 
     function _liquidCash() internal view returns (uint256) {
-        return SafeTransferLib.balanceOf(asset, address(this)) + book.cash(address(this))
-            + book.lockedCash(address(this));
+        return
+            SafeTransferLib.balanceOf(asset, address(this)) + book.cash(address(this)) + book.lockedCash(address(this));
     }
 
     function _freeCash(uint256 needed) internal {
