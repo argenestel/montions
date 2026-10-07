@@ -196,3 +196,30 @@ function withdraw(uint256 assets, address receiver, address owner_) external ret
 function totalAssets() external view returns (uint256);
 function refresh(bytes32 seriesId) external;
 ```
+
+## 14. Amendments v0.2 (NORMATIVE — supersede any conflicting text above)
+
+Source: independent adversarial reviews by Grok 4.6 and Codex Luna 6 (see research notes). Numbers are decisions, not suggestions.
+
+**A1 Oracle / data trust.** `TwapThresholdResolver` is constructed with a single trusted oracle: `constructor(address trustedOracle, address owner_)`; `validate` reverts unless the decoded `oracle == trustedOracle`.
+`TimelockOpResolver` has an owner-managed allowlist of timelock contracts (`constructor(address owner_)`, `setTimelockAllowed(address,bool)`); `validate` reverts for non-allowlisted timelocks.
+`Book.createSeries` rejects `data.length > 512`. Quoter and MakerVault ignore any series whose resolver is not the configured TwapThresholdResolver.
+Optional liquidity guard: `OracleHub.isHealthy(bytes32 assetId) returns (bool)` (pool quote reserve ≥ owner-set `minQuoteReserve[assetId]`); the TWAP resolver's `validate` requires it when the oracle exposes it (try/catch; absent ⇒ treated as healthy).
+
+**A2 TWAP history.** SpotPool ring size = 8192 observations. At most ONE observation per `block.timestamp` (a second write at the same timestamp updates that observation in place, never advances the ring). Between observations the price used is the price of the observation at or before `t` (extrapolation uses the last PRE-t price). `OracleHub.registerAsset` is one-time per assetId. If history is unavailable `twapAt` reverts `HistoryUnavailable`; `resolve` then reverts "not ready" until `VOID_GRACE`, after which anyone may void.
+NatSpec/UI must state: an attacker who moves the pool in the last seconds of an idle window influences the TWAP; mitigated only by depth + window, never eliminated.
+`SpotPool.priceWad() = quoteReserves * 1e30 / baseReserves` for 6-decimal quote and 18-decimal base (USD per whole base, 1e18).
+
+**A3 Selling NO (close-NO bids).** `PlaceParams.fromHeld` on a **Bid** means "buy YES to merge with NO I already hold": the Book escrows `qty` NO tokens (from the caller) plus cash `qty*L*TICK_UNIT`. Economically it is a sale of NO at price `100 - fillTick`: for each fill of `f` contracts at maker tick `p`, the caller's escrowed NO is consumed (burned against the YES leg or transferred to the writer — implementation's choice as long as pool/supply stay consistent), the caller's cash receives `f*(100-p)*TICK_UNIT` net, unused cash escrow `(L-p)*f*TICK_UNIT` is released. `Ask.fromHeld` still means "sell held YES". Update `IMontionsBook` NatSpec only; no signature change. `IQuoter.quoteSell(…, yes=false, …)` follows these rules (walks resting Asks).
+
+**A4 Fees.** `fee = ceil( takerCollateralConsumed * takerFeeBps / 10_000 )`, one `ceil` per order, where `takerCollateralConsumed = Σ over fills` of: Bid ⇒ `fill*tick*TICK_UNIT`; write-Ask ⇒ `fill*(100-tick)*TICK_UNIT`; fromHeld sells ⇒ proceeds `fill*tick*TICK_UNIT` (Ask) / `fill*(100-tick)*TICK_UNIT` (close-NO bid). For Bids and write-Asks the maximum fee on the full limit is locked UP FRONT in addition to the escrow (`ceil(escrow*bps/10_000)`) and the unused reserve is refunded when the order finishes or is cancelled; for fromHeld sells the fee is deducted from proceeds. The fee is never taken from `pool`. Fee is 0 by default.
+
+**A5 Reentrancy.** `nonReentrant` is applied per external state-changing function; `multicall` itself MUST NOT be `nonReentrant` (sequential inner calls each take and release the guard). The matching loop makes no external calls.
+
+**A6 Time semantics.** Trading is allowed while `block.timestamp < expiry`; `resolve` requires `block.timestamp > expiry`; resolvers report ready iff `block.timestamp > expiry`. Resolver staticcall gas cap is 500k everywhere (ignore the "300k" wording in IResolver NatSpec). TimelockOpResolver: `yes = isOperationDone(operationId)` at the moment of the first successful `resolve` call (operations never become "undone"); a reverting timelock is "not ready" and voids after `VOID_GRACE`.
+
+**A7 Bounds.** Max order `qty` = 2^40 - 1 contracts; per-level aggregate quantities are `uint128`; min qty 1; `data.length <= 512`. `maxFills` counts every matched or STP-cancelled resting order.
+
+**A8 MakerVault hardening.** `refresh(seriesId)` is callable only by `owner` or an owner-set `keeper` (events emitted). Global caps enforced on every refresh: total worst-case exposure (locked + inventory at 100 for the losing side) ≤ 30% of NAV, free Book cash ≥ 20% of NAV after quoting; otherwise cancel quotes instead of posting. Ladder ticks are clamped to 1..99. ERC4626 inflation defence: virtual offset (decimalsOffset 6 or equivalent). `withdraw` first cancels the vault's own tracked orders (bounded: ≤ 8 orders per series, ≤ 64 per call) until enough cash is free; if still insufficient it reverts. NAV uses fair-value marks only for series that are Open and for which the model has data, and never marks above the best-ask for inventory that cannot be sold at that price (use `min(fair, bestBid-based conservative mark)` for YES inventory and symmetric for NO).
+
+**A9 Collateral token.** The Book requires an exact-transfer, non-rebasing 6-decimal collateral (tUSDC). `deposit` must verify the balance delta equals `amount`.
