@@ -28,6 +28,8 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     /// @notice Delay after expiry before a not-ready resolver causes a void.
     uint64 public constant override VOID_GRACE = 2 days;
     uint16 private constant _DEFAULT_MAX_FILLS = 32;
+    uint16 private constant _MAX_FILLS = 256;
+    uint64 private constant _MAX_ORDER_QTY = (uint64(1) << 40) - 1;
     uint8 private constant _TRADE_RING_SIZE = 64;
     uint256 private constant _RESOLVE_GAS = 500_000;
 
@@ -71,7 +73,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     struct TickLevel {
         uint64 head;
         uint64 tail;
-        uint64 qty;
+        uint128 qty;
     }
 
     mapping(uint64 orderId => StoredOrder order) private _orders;
@@ -94,6 +96,9 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     error BadFeeRecipient();
     error NotAuthorized();
     error ZeroAddress();
+    error DataTooLong(uint256 length);
+    error MaxFillsTooHigh(uint16 maxFills);
+    error CollateralTransferMismatch(uint256 expected, uint256 received);
 
     /// @notice Deploys the Book for a collateral token and initial administrator.
     /// @param collateral_ Six-decimal ERC20 collateral used for deposits and payouts.
@@ -136,9 +141,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     /// @notice Deposits collateral into the caller's free cash account.
     /// @param amount Collateral amount in the token's smallest unit.
     function deposit(uint256 amount) external override nonReentrant {
-        SafeTransferLib.safeTransferFrom(collateral, msg.sender, address(this), amount);
-        cash[msg.sender] += amount;
-        emit Deposit(msg.sender, amount);
+        _depositCollateral(msg.sender, amount);
     }
 
     /// @notice Deposits collateral using an EIP-2612 permit in the same transaction.
@@ -153,9 +156,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         nonReentrant
     {
         IERC20Permit(collateral).permit(msg.sender, address(this), amount, deadline, v, r, s);
-        SafeTransferLib.safeTransferFrom(collateral, msg.sender, address(this), amount);
-        cash[msg.sender] += amount;
-        emit Deposit(msg.sender, amount);
+        _depositCollateral(msg.sender, amount);
     }
 
     /// @notice Withdraws free collateral from the caller's cash account.
@@ -195,6 +196,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         nonReentrant
         returns (bytes32 seriesId)
     {
+        if (data.length > 512) revert DataTooLong(data.length);
         if (!resolverAllowed[resolver] || resolver.code.length == 0) revert ResolverNotAllowed();
         if (expiry < block.timestamp + MIN_DURATION || expiry > block.timestamp + MAX_DURATION) revert BadExpiry();
         try IResolver(resolver).validate(data, expiry) {}
@@ -259,8 +261,14 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     }
 
     /// @notice Places a limit order and applies maker price-time priority.
-    /// @dev At the `maxFills` bound, a still-crossing GTC remainder is refunded and
-    ///      returned with `resting == 0`; only a non-crossing remainder joins the book.
+    /// @dev A Bid with `fromHeld=true` escrows NO plus bid-limit cash to acquire YES and merge the pair;
+    ///      it earns UNIT minus the resting YES tick per fill. Against a write-Ask, the writer receives
+    ///      newly minted NO while the acquired YES and escrowed NO are burned together; against a held-YES
+    ///      Ask, both existing legs are burned and the pool releases UNIT. The taker fee is one ceil on
+    ///      collateral consumed across all fills. Bids and write-Asks reserve the maximum fee up front and
+    ///      release the unused reserve when the taker phase ends; held-token sellers pay from proceeds.
+    ///      At the `maxFills` bound, a still-crossing GTC remainder is refunded and returned with
+    ///      `resting == 0`; only a non-crossing remainder joins the book.
     /// @param p Order series, side, limit, quantity, time-in-force, and fill bound.
     /// @return orderId Sequential id assigned to this submission.
     /// @return filled Contracts matched immediately.
@@ -273,8 +281,10 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     {
         _prepareOrder(p);
         orderId = _recordIncoming(p);
-        (filled, resting) = _matchOrder(p);
+        uint256 takerCollateralConsumed;
+        (filled, resting, takerCollateralConsumed) = _matchOrder(p);
         resting = _finishIncoming(p, orderId, resting);
+        _settleTakerFee(p, takerCollateralConsumed);
     }
 
     function _prepareOrder(PlaceParams calldata p) private {
@@ -283,21 +293,27 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         if (info.status != Status.Open) revert SeriesNotOpen();
         if (block.timestamp >= info.expiry) revert Expired();
         if (p.tick == 0 || p.tick >= TICKS) revert BadTick();
-        if (p.qty == 0 || (p.side == Side.Bid && p.fromHeld)) revert BadQty();
+        if (p.qty == 0 || p.qty > _MAX_ORDER_QTY) revert BadQty();
+        if (p.maxFills > _MAX_FILLS) revert MaxFillsTooHigh(p.maxFills);
 
         if (p.tif == TIF.POST_ONLY && _wouldCross(p.seriesId, p.side, p.tick)) revert WouldCross();
 
         uint256 escrow = _orderEscrow(p.side, p.tick, p.qty, p.fromHeld);
+        uint256 feeReserve = p.fromHeld ? 0 : _feeFor(escrow);
+        uint256 requiredCash = escrow + feeReserve;
+        uint256 free = cash[msg.sender];
+        if (free < requiredCash) revert InsufficientCash();
+
         if (p.fromHeld) {
-            if (_outcomeBalance(msg.sender, info.yesId) < p.qty) revert InsufficientTokens();
-            _transferOutcome(msg.sender, address(this), info.yesId, p.qty);
-        } else {
-            uint256 free = cash[msg.sender];
-            if (free < escrow) revert InsufficientCash();
+            uint256 tokenId = p.side == Side.Bid ? info.noId : info.yesId;
+            if (_outcomeBalance(msg.sender, tokenId) < p.qty) revert InsufficientTokens();
+            _transferOutcome(msg.sender, address(this), tokenId, p.qty);
+        }
+        if (requiredCash != 0) {
             unchecked {
-                cash[msg.sender] = free - escrow;
+                cash[msg.sender] = free - requiredCash;
             }
-            lockedCash[msg.sender] += escrow;
+            lockedCash[msg.sender] += requiredCash;
         }
     }
 
@@ -320,7 +336,10 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         emit OrderPlaced(orderId, p.seriesId, msg.sender, p.side, p.tick, p.qty, p.fromHeld);
     }
 
-    function _matchOrder(PlaceParams calldata p) private returns (uint64 filled, uint64 remaining) {
+    function _matchOrder(PlaceParams calldata p)
+        private
+        returns (uint64 filled, uint64 remaining, uint256 takerCollateralConsumed)
+    {
         remaining = p.qty;
         uint16 maxFills = p.maxFills == 0 ? _DEFAULT_MAX_FILLS : p.maxFills;
         uint16 attempts;
@@ -337,6 +356,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
             uint64 fillQty = _matchCandidate(p, makerId, makerTick, remaining);
             remaining -= fillQty;
             filled += fillQty;
+            takerCollateralConsumed += _takerCollateralConsumed(p, makerTick, fillQty);
             ++attempts;
         }
     }
@@ -357,7 +377,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
             return remaining;
         }
 
-        _refundIncoming(p, orderId, remaining, _series[p.seriesId].yesId);
+        _refundIncoming(p, remaining);
         incoming.qty = 0;
         incoming.open = false;
         emit OrderCancelled(orderId, p.seriesId, remaining);
@@ -433,7 +453,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         SeriesInfo storage info = _series[seriesId];
         if (info.status == Status.None) revert SeriesUnknown();
         if (info.status != Status.Open) revert AlreadySettled();
-        if (block.timestamp < info.expiry) revert NotExpired();
+        if (block.timestamp <= info.expiry) revert NotExpired();
 
         (bool success, bytes memory result) =
             info.resolver.staticcall{gas: _RESOLVE_GAS}(abi.encodeCall(IResolver.resolve, (info.data, info.expiry)));
@@ -510,8 +530,8 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     {
         bidTick = _bidBitmap[seriesId].highestSetBit();
         askTick = _askBitmap[seriesId].lowestSetBit();
-        if (bidTick != 0) bidQty = _bidLevels[seriesId][bidTick].qty;
-        if (askTick != 0) askQty = _askLevels[seriesId][askTick].qty;
+        if (bidTick != 0) bidQty = uint64(_bidLevels[seriesId][bidTick].qty);
+        if (askTick != 0) askQty = uint64(_askLevels[seriesId][askTick].qty);
     }
 
     /// @notice Returns aggregate levels best price first for one side.
@@ -531,8 +551,8 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         uint256 count;
         while (bitmap != 0 && count < maxLevels) {
             uint8 tick = side == Side.Bid ? bitmap.highestSetBit() : bitmap.lowestSetBit();
-            uint64 qty = side == Side.Bid ? _bidLevels[seriesId][tick].qty : _askLevels[seriesId][tick].qty;
-            levels[count++] = Level({tick: tick, qty: qty});
+            uint128 qty = side == Side.Bid ? _bidLevels[seriesId][tick].qty : _askLevels[seriesId][tick].qty;
+            levels[count++] = Level({tick: tick, qty: uint64(qty)});
             bitmap = bitmap.unset(tick);
         }
         assembly {
@@ -712,48 +732,134 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
 
     function _executeFill(PlaceParams calldata p, uint64 makerId, uint64 qty, uint8 price, bool takerIsBuyer) private {
         StoredOrder storage maker = _orders[makerId];
-        SeriesInfo storage info = _series[p.seriesId];
         uint256 premium = uint256(qty) * price * TICK_UNIT;
-        uint256 fee = _feeFor(premium);
 
         if (takerIsBuyer) {
-            uint256 reserved = uint256(qty) * p.tick * TICK_UNIT;
-            lockedCash[msg.sender] -= reserved;
-            cash[msg.sender] += reserved - premium;
-
-            if (maker.fromHeld) {
-                cash[maker.maker] += premium;
-                _transferOutcome(address(this), msg.sender, info.yesId, qty);
-            } else {
-                lockedCash[maker.maker] -= uint256(qty) * (TICKS - price) * TICK_UNIT;
-                pool[p.seriesId] += uint256(qty) * UNIT;
-                _mintOutcome(msg.sender, info.yesId, qty);
-                _mintOutcome(maker.maker, info.noId, qty);
-            }
+            if (p.fromHeld) _executeCloseNoBid(p, maker, qty, price, premium);
+            else _executeRegularBid(p, maker, qty, price, premium);
+        } else if (maker.fromHeld) {
+            if (p.fromHeld) _executeHeldAskAgainstCloseNo(p, maker, qty, premium);
+            else _executeWriteAskAgainstCloseNo(p, maker, qty, price, premium);
+        } else if (p.fromHeld) {
+            _executeHeldAsk(p, maker, qty, premium);
         } else {
-            lockedCash[maker.maker] -= premium;
-            if (p.fromHeld) {
-                cash[msg.sender] += premium;
-                _transferOutcome(address(this), maker.maker, info.yesId, qty);
-            } else {
-                uint256 reserved = uint256(qty) * (TICKS - p.tick) * TICK_UNIT;
-                uint256 writeCollateral = uint256(qty) * (TICKS - price) * TICK_UNIT;
-                lockedCash[msg.sender] -= reserved;
-                cash[msg.sender] += reserved - writeCollateral;
-                pool[p.seriesId] += uint256(qty) * UNIT;
-                _mintOutcome(maker.maker, info.yesId, qty);
-                _mintOutcome(msg.sender, info.noId, qty);
-            }
+            _executeWriteAsk(p, maker, qty, price, premium);
         }
+    }
 
-        if (fee != 0) {
-            uint256 free = cash[msg.sender];
-            if (free < fee) revert InsufficientCash();
-            unchecked {
-                cash[msg.sender] = free - fee;
-            }
-            protocolFees += fee;
+    function _executeRegularBid(
+        PlaceParams calldata p,
+        StoredOrder storage maker,
+        uint64 qty,
+        uint8 price,
+        uint256 premium
+    ) private {
+        uint256 reserved = uint256(qty) * p.tick * TICK_UNIT;
+        lockedCash[msg.sender] -= reserved;
+        cash[msg.sender] += reserved - premium;
+
+        if (maker.fromHeld) {
+            cash[maker.maker] += premium;
+            _transferOutcome(address(this), msg.sender, _series[p.seriesId].yesId, qty);
+        } else {
+            lockedCash[maker.maker] -= uint256(qty) * (TICKS - price) * TICK_UNIT;
+            pool[p.seriesId] += uint256(qty) * UNIT;
+            _mintOutcome(msg.sender, _series[p.seriesId].yesId, qty);
+            _mintOutcome(maker.maker, _series[p.seriesId].noId, qty);
         }
+    }
+
+    /// @dev Close-NO pays the bid premium to a held-YES seller or creates and immediately
+    ///      merges a written pair. In either case the escrowed NO and acquired YES are burned;
+    ///      the pool and both supplies return to their pre-fill values.
+    function _executeCloseNoBid(
+        PlaceParams calldata p,
+        StoredOrder storage maker,
+        uint64 qty,
+        uint8 price,
+        uint256 premium
+    ) private {
+        SeriesInfo storage info = _series[p.seriesId];
+        uint256 reserved = uint256(qty) * p.tick * TICK_UNIT;
+        uint256 payout = uint256(qty) * UNIT;
+        lockedCash[msg.sender] -= reserved;
+        cash[msg.sender] += reserved - premium;
+
+        if (maker.fromHeld) {
+            cash[maker.maker] += premium;
+            _burnOutcome(address(this), info.yesId, qty);
+        } else {
+            lockedCash[maker.maker] -= uint256(qty) * (TICKS - price) * TICK_UNIT;
+            pool[p.seriesId] += payout;
+            _mintOutcome(msg.sender, info.yesId, qty);
+            _mintOutcome(maker.maker, info.noId, qty);
+            _burnOutcome(msg.sender, info.yesId, qty);
+        }
+        _burnOutcome(address(this), info.noId, qty);
+        pool[p.seriesId] -= payout;
+        cash[msg.sender] += payout;
+    }
+
+    function _executeHeldAsk(PlaceParams calldata p, StoredOrder storage maker, uint64 qty, uint256 premium) private {
+        lockedCash[maker.maker] -= premium;
+        cash[msg.sender] += premium;
+        _transferOutcome(address(this), maker.maker, _series[p.seriesId].yesId, qty);
+    }
+
+    function _executeWriteAsk(
+        PlaceParams calldata p,
+        StoredOrder storage maker,
+        uint64 qty,
+        uint8 price,
+        uint256 premium
+    ) private {
+        lockedCash[maker.maker] -= premium;
+        uint256 reserved = uint256(qty) * (TICKS - p.tick) * TICK_UNIT;
+        uint256 writeCollateral = uint256(qty) * (TICKS - price) * TICK_UNIT;
+        lockedCash[msg.sender] -= reserved;
+        cash[msg.sender] += reserved - writeCollateral;
+        pool[p.seriesId] += uint256(qty) * UNIT;
+        _mintOutcome(maker.maker, _series[p.seriesId].yesId, qty);
+        _mintOutcome(msg.sender, _series[p.seriesId].noId, qty);
+    }
+
+    function _executeHeldAskAgainstCloseNo(
+        PlaceParams calldata p,
+        StoredOrder storage maker,
+        uint64 qty,
+        uint256 premium
+    ) private {
+        SeriesInfo storage info = _series[p.seriesId];
+        uint256 payout = uint256(qty) * UNIT;
+        lockedCash[maker.maker] -= premium;
+        cash[msg.sender] += premium;
+        _burnOutcome(address(this), info.yesId, qty);
+        _burnOutcome(address(this), info.noId, qty);
+        pool[p.seriesId] -= payout;
+        cash[maker.maker] += payout;
+    }
+
+    function _executeWriteAskAgainstCloseNo(
+        PlaceParams calldata p,
+        StoredOrder storage maker,
+        uint64 qty,
+        uint8 price,
+        uint256 premium
+    ) private {
+        SeriesInfo storage info = _series[p.seriesId];
+        uint256 payout = uint256(qty) * UNIT;
+        uint256 reserved = uint256(qty) * (TICKS - p.tick) * TICK_UNIT;
+        uint256 writeCollateral = uint256(qty) * (TICKS - price) * TICK_UNIT;
+        lockedCash[maker.maker] -= premium;
+        lockedCash[msg.sender] -= reserved;
+        cash[msg.sender] += reserved - writeCollateral;
+        pool[p.seriesId] += payout;
+        _mintOutcome(maker.maker, info.yesId, qty);
+        _mintOutcome(msg.sender, info.noId, qty);
+        _burnOutcome(maker.maker, info.yesId, qty);
+        _burnOutcome(address(this), info.noId, qty);
+        pool[p.seriesId] -= payout;
+        cash[maker.maker] += payout;
     }
 
     function _matchCandidate(PlaceParams calldata p, uint64 makerId, uint8 makerTick, uint64 remaining)
@@ -770,26 +876,59 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         emit Trade(p.seriesId, makerId, makerAddress, msg.sender, makerTick, fillQty, takerIsBuyer);
     }
 
-    function _refundIncoming(PlaceParams calldata p, uint64, uint64 qty, uint256 yesId) private {
+    function _takerCollateralConsumed(PlaceParams calldata p, uint8 price, uint64 qty) private pure returns (uint256) {
+        uint256 perContract;
+        if (p.side == Side.Bid) perContract = p.fromHeld ? TICKS - price : price;
+        else perContract = p.fromHeld ? price : TICKS - price;
+        return uint256(qty) * perContract * TICK_UNIT;
+    }
+
+    function _settleTakerFee(PlaceParams calldata p, uint256 consumed) private {
+        uint256 fee = _feeFor(consumed);
         if (p.fromHeld) {
-            _transferOutcome(address(this), msg.sender, yesId, qty);
+            if (fee != 0) {
+                uint256 free = cash[msg.sender];
+                if (free < fee) revert InsufficientCash();
+                unchecked {
+                    cash[msg.sender] = free - fee;
+                }
+                protocolFees += fee;
+            }
             return;
         }
-        uint256 amount = _orderEscrow(p.side, p.tick, qty, false);
-        lockedCash[msg.sender] -= amount;
-        cash[msg.sender] += amount;
+
+        uint256 reserve = _feeFor(_orderEscrow(p.side, p.tick, p.qty, false));
+        if (reserve != 0) {
+            lockedCash[msg.sender] -= reserve;
+            cash[msg.sender] += reserve - fee;
+        }
+        protocolFees += fee;
+    }
+
+    function _refundIncoming(PlaceParams calldata p, uint64 qty) private {
+        uint256 amount = _orderEscrow(p.side, p.tick, qty, p.fromHeld);
+        if (amount != 0) {
+            lockedCash[msg.sender] -= amount;
+            cash[msg.sender] += amount;
+        }
+        if (p.fromHeld) {
+            uint256 tokenId = p.side == Side.Bid ? _series[p.seriesId].noId : _series[p.seriesId].yesId;
+            _transferOutcome(address(this), msg.sender, tokenId, qty);
+        }
     }
 
     function _cancelResting(uint64 orderId) private {
         StoredOrder storage order = _orders[orderId];
         uint64 qty = order.qty;
-        if (order.side == Side.Bid || !order.fromHeld) {
-            uint256 amount = _orderEscrow(order.side, order.tick, qty, order.fromHeld);
+        uint256 amount = _orderEscrow(order.side, order.tick, qty, order.fromHeld);
+        if (amount != 0) {
             lockedCash[order.maker] -= amount;
             cash[order.maker] += amount;
-        } else {
-            uint256 yesId = _series[order.seriesId].yesId;
-            _transferOutcome(address(this), order.maker, yesId, qty);
+        }
+        if (order.fromHeld) {
+            SeriesInfo storage info = _series[order.seriesId];
+            uint256 tokenId = order.side == Side.Bid ? info.noId : info.yesId;
+            _transferOutcome(address(this), order.maker, tokenId, qty);
         }
         _removeFromLevel(orderId, qty);
         order.qty = 0;
@@ -800,7 +939,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     function _consumeResting(uint64 orderId, uint64 qty) private {
         StoredOrder storage order = _orders[orderId];
         TickLevel storage level = _level(order.seriesId, order.side, order.tick);
-        level.qty -= qty;
+        level.qty -= uint128(qty);
         order.qty -= qty;
         if (order.qty == 0) {
             _unlink(orderId, level);
@@ -812,7 +951,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     function _removeFromLevel(uint64 orderId, uint64 qty) private {
         StoredOrder storage order = _orders[orderId];
         TickLevel storage level = _level(order.seriesId, order.side, order.tick);
-        level.qty -= qty;
+        level.qty -= uint128(qty);
         _unlink(orderId, level);
         if (level.qty == 0) _setOccupied(order.seriesId, order.side, order.tick, false);
     }
@@ -827,7 +966,7 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
         if (oldTail == 0) level.head = orderId;
         else _orders[oldTail].next = orderId;
         level.tail = orderId;
-        level.qty += order.qty;
+        level.qty += uint128(order.qty);
     }
 
     function _unlink(uint64 orderId, TickLevel storage level) private {
@@ -877,15 +1016,25 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     }
 
     function _orderEscrow(Side side, uint8 tick, uint64 qty, bool fromHeld) private pure returns (uint256) {
-        if (fromHeld) return 0;
+        if (fromHeld && side == Side.Ask) return 0;
         uint256 perContract = side == Side.Bid ? tick : TICKS - tick;
         return uint256(qty) * perContract * TICK_UNIT;
     }
 
-    function _feeFor(uint256 premium) private view returns (uint256) {
+    function _feeFor(uint256 collateralConsumed) private view returns (uint256) {
         uint16 bps = takerFeeBps;
-        if (bps == 0 || premium == 0) return 0;
-        return (premium * bps + 9_999) / 10_000;
+        if (bps == 0 || collateralConsumed == 0) return 0;
+        return (collateralConsumed * bps + 9_999) / 10_000;
+    }
+
+    function _depositCollateral(address account, uint256 amount) private {
+        uint256 beforeBalance = IERC20Balance(collateral).balanceOf(address(this));
+        SafeTransferLib.safeTransferFrom(collateral, account, address(this), amount);
+        uint256 afterBalance = IERC20Balance(collateral).balanceOf(address(this));
+        uint256 received = afterBalance >= beforeBalance ? afterBalance - beforeBalance : 0;
+        if (received != amount) revert CollateralTransferMismatch(amount, received);
+        cash[account] += amount;
+        emit Deposit(account, amount);
     }
 
     function _level(bytes32 seriesId, Side side, uint8 tick) private view returns (TickLevel storage level) {
@@ -926,4 +1075,8 @@ contract MontionsBook is IMontionsBook, OutcomeToken1155, ReentrancyGuard, Multi
     interface IERC20Permit {
         function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
             external;
+    }
+
+    interface IERC20Balance {
+        function balanceOf(address account) external view returns (uint256);
     }

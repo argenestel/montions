@@ -95,7 +95,7 @@ contract BookInvariantTest is Test {
         uint64 count = book.orderCount();
         for (uint64 id = 1; id <= count; ++id) {
             IMontionsBook.OrderView memory order = book.orderInfo(id);
-            if (!order.open || order.fromHeld) continue;
+            if (!order.open || (order.fromHeld && order.side == IMontionsBook.Side.Ask)) continue;
             uint256 perContract = order.side == IMontionsBook.Side.Bid ? order.tick : 100 - order.tick;
             uint256 escrow = uint256(order.qty) * perContract * TICK_UNIT;
             for (uint256 u; u < users.length; ++u) {

@@ -446,7 +446,7 @@ contract DiffReplay is Test {
     }
 
     function _isV02() internal view returns (bool) {
-        string memory mode = vm.envOr("DIFF_MODE", string("v01"));
+        string memory mode = vm.envOr("DIFF_MODE", string("v02"));
         if (_eq(mode, "v02")) return true;
         if (_eq(mode, "v01")) return false;
         revert(string.concat("unsupported DIFF_MODE: ", mode));

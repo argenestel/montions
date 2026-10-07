@@ -75,14 +75,16 @@ contract BookSemanticsTest is BookTestBase {
 
         bytes[] memory calls = new bytes[](2);
         calls[0] = abi.encodeCall(book.depositWithPermit, (amount, deadline, v, r, s));
-        calls[1] = abi.encodeCall(book.split, (series, uint64(1)));
+        IMontionsBook.PlaceParams memory order =
+            _params(series, IMontionsBook.Side.Bid, 30, 1, false, IMontionsBook.TIF.GTC, 0);
+        calls[1] = abi.encodeCall(book.placeOrder, (order));
         vm.prank(signer);
         book.multicall(calls);
 
-        assertEq(book.cash(signer), 1_000_000);
-        assertEq(book.balanceOf(signer, _yesId()), 1);
-        assertEq(book.balanceOf(signer, _noId()), 1);
-        assertEq(book.pool(series), UNIT);
+        assertEq(book.cash(signer), 1_700_000);
+        assertEq(book.lockedCash(signer), 300_000);
+        assertTrue(book.orderInfo(book.orderCount()).open);
+        assertEq(book.pool(series), 0);
     }
 
     function testBadTickAndZeroQuantityRevert() public {
@@ -339,7 +341,7 @@ contract BookSemanticsTest is BookTestBase {
         vm.prank(ALICE);
         book.split(series, 2);
         resolver.setResult(true, true);
-        _warpExpired();
+        vm.warp(uint256(expiry) + 1);
         book.resolve(series);
         assertEq(uint256(book.seriesInfo(series).status), uint256(IMontionsBook.Status.Resolved));
 
@@ -545,6 +547,202 @@ contract BookSemanticsTest is BookTestBase {
         assertEq(book.lockedCash(ALICE), 500_000);
     }
 
+    function testCloseNoBidTakerMatchesWriteAsk() public {
+        _deposit(ALICE, 3 * UNIT);
+        _deposit(BOB, UNIT);
+        vm.prank(ALICE);
+        book.split(series, 2);
+        _place(BOB, IMontionsBook.Side.Ask, 40, 1, false, IMontionsBook.TIF.GTC, 0);
+
+        (, uint64 filled,) = _place(ALICE, IMontionsBook.Side.Bid, 50, 1, true, IMontionsBook.TIF.IOC, 0);
+        assertEq(filled, 1);
+        assertEq(book.cash(ALICE), 1_600_000);
+        assertEq(book.lockedCash(ALICE), 0);
+        assertEq(book.balanceOf(ALICE, _noId()), 1);
+        assertEq(book.balanceOf(BOB, _noId()), 1);
+        assertEq(book.pool(series), 2 * UNIT);
+        assertEq(book.totalSupply(_yesId()), 2);
+        assertEq(book.totalSupply(_noId()), 2);
+        _assertSolvent();
+    }
+
+    function testCloseNoBidTakerMatchesHeldAsk() public {
+        _deposit(ALICE, 2 * UNIT);
+        _deposit(BOB, 2 * UNIT);
+        vm.prank(ALICE);
+        book.split(series, 1);
+        vm.prank(BOB);
+        book.split(series, 1);
+        _place(BOB, IMontionsBook.Side.Ask, 40, 1, true, IMontionsBook.TIF.GTC, 0);
+
+        (, uint64 filled,) = _place(ALICE, IMontionsBook.Side.Bid, 50, 1, true, IMontionsBook.TIF.IOC, 0);
+        assertEq(filled, 1);
+        assertEq(book.cash(ALICE), 1_600_000);
+        assertEq(book.cash(BOB), 1_400_000);
+        assertEq(book.pool(series), UNIT);
+        assertEq(book.totalSupply(_yesId()), 1);
+        assertEq(book.totalSupply(_noId()), 1);
+        _assertSolvent();
+    }
+
+    function testCancelRestingCloseNoBidRefundsCashAndNO() public {
+        _deposit(ALICE, 2 * UNIT);
+        vm.prank(ALICE);
+        book.split(series, 1);
+        (uint64 id,,) = _place(ALICE, IMontionsBook.Side.Bid, 50, 1, true, IMontionsBook.TIF.GTC, 0);
+        assertEq(book.balanceOf(ALICE, _noId()), 0);
+        assertEq(book.balanceOf(address(book), _noId()), 1);
+        assertEq(book.lockedCash(ALICE), 500_000);
+
+        vm.prank(ALICE);
+        book.cancelOrder(id);
+        assertEq(book.balanceOf(ALICE, _noId()), 1);
+        assertEq(book.balanceOf(address(book), _noId()), 0);
+        assertEq(book.lockedCash(ALICE), 0);
+        assertEq(book.cash(ALICE), UNIT);
+        _assertSolvent();
+    }
+
+    function testRestingCloseNoBidMatchesWriteAskTaker() public {
+        _deposit(ALICE, 2 * UNIT);
+        _deposit(BOB, 2 * UNIT);
+        vm.prank(ALICE);
+        book.split(series, 1);
+        _place(ALICE, IMontionsBook.Side.Bid, 50, 1, true, IMontionsBook.TIF.GTC, 0);
+
+        (, uint64 filled,) = _place(BOB, IMontionsBook.Side.Ask, 40, 1, false, IMontionsBook.TIF.GTC, 0);
+        assertEq(filled, 1);
+        assertEq(book.cash(ALICE), 1_500_000);
+        assertEq(book.cash(BOB), 1_500_000);
+        assertEq(book.balanceOf(BOB, _noId()), 1);
+        assertEq(book.pool(series), UNIT);
+        assertEq(book.totalSupply(_yesId()), 1);
+        assertEq(book.totalSupply(_noId()), 1);
+        _assertSolvent();
+    }
+
+    function testRestingCloseNoBidMatchesHeldAskTaker() public {
+        _deposit(ALICE, 2 * UNIT);
+        _deposit(BOB, 2 * UNIT);
+        vm.prank(ALICE);
+        book.split(series, 1);
+        vm.prank(BOB);
+        book.split(series, 1);
+        _place(ALICE, IMontionsBook.Side.Bid, 50, 1, true, IMontionsBook.TIF.GTC, 0);
+
+        (, uint64 filled,) = _place(BOB, IMontionsBook.Side.Ask, 40, 1, true, IMontionsBook.TIF.GTC, 0);
+        assertEq(filled, 1);
+        assertEq(book.cash(ALICE), 1_500_000);
+        assertEq(book.cash(BOB), 1_500_000);
+        assertEq(book.pool(series), UNIT);
+        assertEq(book.totalSupply(_yesId()), 1);
+        assertEq(book.totalSupply(_noId()), 1);
+        _assertSolvent();
+    }
+
+    function testWriteAskFeeUsesWriterCollateralAndExactReserveCash() public {
+        _deposit(BOB, UNIT);
+        _deposit(ALICE, 10_100);
+        vm.prank(BOOK_OWNER);
+        book.setFee(100, DAVE);
+        _place(BOB, IMontionsBook.Side.Bid, 99, 1, false, IMontionsBook.TIF.GTC, 0);
+
+        (, uint64 filled,) = _place(ALICE, IMontionsBook.Side.Ask, 99, 1, false, IMontionsBook.TIF.GTC, 0);
+        assertEq(filled, 1);
+        assertEq(book.cash(ALICE), 0);
+        assertEq(book.lockedCash(ALICE), 0);
+        assertEq(book.protocolFees(), 100);
+        assertEq(book.pool(series), UNIT);
+        _assertSolvent();
+    }
+
+    function testBidCanFillWithOnlyEscrowPlusFeeReserveCash() public {
+        _deposit(BOB, 10_100);
+        _deposit(ALICE, 999_900);
+        vm.prank(BOOK_OWNER);
+        book.setFee(100, DAVE);
+        _place(BOB, IMontionsBook.Side.Ask, 99, 1, false, IMontionsBook.TIF.GTC, 0);
+
+        (, uint64 filled,) = _place(ALICE, IMontionsBook.Side.Bid, 99, 1, false, IMontionsBook.TIF.IOC, 0);
+        assertEq(filled, 1);
+        assertEq(book.cash(ALICE), 0);
+        assertEq(book.lockedCash(ALICE), 0);
+        assertEq(book.protocolFees(), 9_900);
+        assertEq(book.pool(series), UNIT);
+        _assertSolvent();
+    }
+
+    function testRestingWriteAskDoesNotKeepFeeReserve() public {
+        _deposit(ALICE, 10_100);
+        vm.prank(BOOK_OWNER);
+        book.setFee(100, DAVE);
+        (uint64 id,, uint64 resting) = _place(ALICE, IMontionsBook.Side.Ask, 99, 1, false, IMontionsBook.TIF.GTC, 0);
+        assertEq(resting, 1);
+        assertEq(book.lockedCash(ALICE), 10_000);
+        assertEq(book.cash(ALICE), 100);
+        vm.prank(ALICE);
+        book.cancelOrder(id);
+        assertEq(book.lockedCash(ALICE), 0);
+        assertEq(book.cash(ALICE), 10_100);
+    }
+
+    function testFromHeldCloseNoFeeIsDeductedFromSaleProceeds() public {
+        _deposit(ALICE, 1_500_000);
+        _deposit(BOB, UNIT);
+        vm.prank(BOOK_OWNER);
+        book.setFee(100, DAVE);
+        vm.prank(ALICE);
+        book.split(series, 1);
+        _place(BOB, IMontionsBook.Side.Ask, 40, 1, false, IMontionsBook.TIF.GTC, 0);
+
+        (, uint64 filled,) = _place(ALICE, IMontionsBook.Side.Bid, 50, 1, true, IMontionsBook.TIF.IOC, 0);
+        assertEq(filled, 1);
+        assertEq(book.cash(ALICE), 1_094_000);
+        assertEq(book.protocolFees(), 6_000);
+        _assertSolvent();
+    }
+
+    function testCreateSeriesRejectsDataOver512Bytes() public {
+        bytes memory data = new bytes(513);
+        vm.expectRevert(abi.encodeWithSelector(MontionsBook.DataTooLong.selector, uint256(513)));
+        vm.prank(ALICE);
+        book.createSeries(address(resolver), data, expiry + 1);
+    }
+
+    function testOrderQuantityAndMaxFillsBounds() public {
+        _deposit(ALICE, UNIT * 100);
+        vm.expectRevert(IMontionsBook.BadQty.selector);
+        vm.prank(ALICE);
+        book.placeOrder(_params(series, IMontionsBook.Side.Bid, 50, uint64(1 << 40), false, IMontionsBook.TIF.GTC, 0));
+
+        vm.expectRevert(abi.encodeWithSelector(MontionsBook.MaxFillsTooHigh.selector, uint16(257)));
+        vm.prank(ALICE);
+        book.placeOrder(_params(series, IMontionsBook.Side.Bid, 50, 1, false, IMontionsBook.TIF.GTC, 257));
+    }
+
+    function testResolveRequiresTimestampStrictlyAfterExpiry() public {
+        resolver.setResult(true, true);
+        vm.warp(expiry);
+        vm.expectRevert(IMontionsBook.NotExpired.selector);
+        book.resolve(series);
+        vm.warp(uint256(expiry) + 1);
+        book.resolve(series);
+        assertEq(uint256(book.seriesInfo(series).status), uint256(IMontionsBook.Status.Resolved));
+    }
+
+    function testDepositRejectsFeeOnTransferCollateral() public {
+        FeeOnTransferCollateral token = new FeeOnTransferCollateral();
+        MontionsBook feeBook = new MontionsBook(address(token), BOOK_OWNER);
+        token.mint(ALICE, 100);
+        vm.prank(ALICE);
+        token.approve(address(feeBook), 100);
+        vm.expectRevert(
+            abi.encodeWithSelector(MontionsBook.CollateralTransferMismatch.selector, uint256(100), uint256(99))
+        );
+        vm.prank(ALICE);
+        feeBook.deposit(100);
+    }
+
     function testFuzzWriteAskMatchingConservesPool(uint8 askTickSeed, uint8 spreadSeed, uint8 qtySeed) public {
         uint8 askTick = uint8(uint256(askTickSeed) % 99 + 1);
         uint8 spread = uint8(uint256(spreadSeed) % (100 - askTick));
@@ -632,5 +830,28 @@ contract RejectingMaker {
 
     function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
         revert("hook must not run during fill");
+    }
+}
+
+contract FeeOnTransferCollateral {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        uint256 approved = allowance[from][msg.sender];
+        require(approved >= amount && balanceOf[from] >= amount);
+        if (approved != type(uint256).max) allowance[from][msg.sender] = approved - amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount - 1;
+        return true;
     }
 }
