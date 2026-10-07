@@ -13,3 +13,6 @@ coverage/
 app/public/deployment.json
 .dev/
 app/public/deployment.json
+deployments/*.contracts.json
+deployments/*.meta.json
+.dev/

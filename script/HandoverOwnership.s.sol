@@ -13,7 +13,9 @@ contract HandoverOwnership is Script {
     function run() external {
         address newOwner = vm.envAddress("NEW_OWNER");
         address[] memory list = vm.envAddress("CONTRACTS", ",");
-        require(newOwner != address(0) && newOwner.code.length > 0, "NEW_OWNER must be a contract (Safe) with code");
+        require(newOwner != address(0), "NEW_OWNER required");
+        // Production: the new owner must be a contract (Safe multisig). Rehearsals on a fork may set ALLOW_EOA_OWNER=1.
+        require(newOwner.code.length > 0 || vm.envOr("ALLOW_EOA_OWNER", uint256(0)) == 1, "NEW_OWNER must be a contract (Safe) with code");
         vm.startBroadcast();
         for (uint256 i; i < list.length; ++i) {
             require(IOwnable2(list[i]).owner() == msg.sender, "caller is not the current owner");

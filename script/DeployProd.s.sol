@@ -65,9 +65,12 @@ contract DeployProd is Script {
         o.owner = msg.sender;
         o.book = new MontionsBook(usdc, msg.sender);
         o.oracle = new PythOracle(pyth, msg.sender);
-        o.oracle.setFeed(keccak256("MON"), FEED_MON_USD, 1.2e18, 60);
-        o.oracle.setFeed(keccak256("BTC"), FEED_BTC_USD, 0.6e18, 60);
-        o.oracle.setFeed(keccak256("ETH"), FEED_ETH_USD, 0.8e18, 60);
+        // maxAge: Pyth's pushed feeds refresh roughly every 30-70s on Monad (measured 2026-10-07: BTC/ETH ~65s, MON ~35s), so 180s
+        // (~3 heartbeats) avoids false "unhealthy" flaps. It only affects quoting/display; settlement uses fresh signed data at expiry.
+        uint32 maxAge = uint32(vm.envOr("PYTH_MAX_AGE", uint256(180)));
+        o.oracle.setFeed(keccak256("MON"), FEED_MON_USD, 1.2e18, maxAge);
+        o.oracle.setFeed(keccak256("BTC"), FEED_BTC_USD, 0.6e18, maxAge);
+        o.oracle.setFeed(keccak256("ETH"), FEED_ETH_USD, 0.8e18, maxAge);
         o.resolver = new PythSettlementResolver(pyth, address(o.oracle), msg.sender);
         o.resolver.setSymbol(keccak256("MON"), "MON"); o.resolver.setSymbol(keccak256("BTC"), "BTC"); o.resolver.setSymbol(keccak256("ETH"), "ETH");
         o.timelock = new TimelockOpResolver(msg.sender);

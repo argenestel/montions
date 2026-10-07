@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Hex } from "viem";
 import {
+  defaultHermesTransport,
   hermesPriceUpdateUrl,
   parseHermesUpdate,
   revertName,
@@ -189,5 +190,20 @@ describe("revertName", () => {
     expect(revertName({ shortMessage: "PriceFeedNotFoundWithinRange()" })).toBe("PriceFeedNotFoundWithinRange");
     expect(revertName(new Error("AlreadySettled(bytes32,uint64)"))).toBe("AlreadySettled");
     expect(revertName("nope")).toBeUndefined();
+  });
+});
+
+
+describe("Hermes API key", () => {
+  it("sends the key as a bearer token and never puts it in the URL", async () => {
+    const seen: { url: string; init?: RequestInit }[] = [];
+    const fake = (async (url: string, init?: RequestInit) => { seen.push({ url, init }); return new Response(JSON.stringify({ ok: true }), { status: 200 }); }) as unknown as typeof fetch;
+    await defaultHermesTransport(fake, "secret-key").fetchJson("https://hermes.example/v2/updates/price/1");
+    expect((seen[0]!.init?.headers as Record<string, string>).Authorization).toBe("Bearer secret-key");
+    expect(seen[0]!.url).not.toContain("secret-key");
+  });
+  it("explains a 401 clearly", async () => {
+    const fake = (async () => new Response("unauthorized", { status: 401 })) as unknown as typeof fetch;
+    await expect(defaultHermesTransport(fake, undefined).fetchJson("https://hermes.example/x")).rejects.toThrow(/HERMES_API_KEY/);
   });
 });

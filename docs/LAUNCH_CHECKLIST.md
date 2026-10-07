@@ -17,6 +17,8 @@ A box is checked only when it is *true and evidenced*. Mainnet with real funds r
 ## Gate 2 — Oracle correctness on mainnet
 - [ ] Mainnet-fork test: `PythSettlementResolver.settle` with real Hermes update data succeeds and matches the Pyth price.
 - [ ] Feed IDs reviewed (MON/USD, BTC/USD, ETH/USD) and vol parameters set by a named owner with a review cadence.
+- [ ] **Pyth Hermes API key** obtained (Pyth Core now requires one), stored as a secret, and the paid plan sized for the settlement volume; a second operator holds a separate key.
+- [ ] `HERMES_API_KEY=… REQUIRE_PYTH=1 scripts/fork-rehearsal.sh` prints `FORK REHEARSAL PASSED` (live Pyth settlement verified on a mainnet fork).
 - [ ] Keeper that submits settlement is deployed redundantly (≥ 2 independent operators/regions) and alerts on lateness.
 
 ## Gate 3 — Operations

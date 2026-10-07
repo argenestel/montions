@@ -174,10 +174,18 @@ export async function hermesFetchUpdateData(
   return parseHermesUpdate(payload);
 }
 
-export function defaultHermesTransport(fetchImpl: typeof fetch = fetch): HermesTransport {
+/**
+ * Hermes (Pyth Core) requires an API key as of the August 2026 upgrade: send it as `Authorization: Bearer <key>`.
+ * The key is read from HERMES_API_KEY (never logged). Without it the public endpoint answers 401.
+ */
+export function defaultHermesTransport(fetchImpl: typeof fetch = fetch, apiKey: string | undefined = process.env.HERMES_API_KEY): HermesTransport {
+  const key = apiKey?.trim();
   return {
     async fetchJson(url: string): Promise<unknown> {
-      const response = await fetchImpl(url);
+      const response = await fetchImpl(url, key ? { headers: { Authorization: `Bearer ${key}` } } : undefined);
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`Hermes HTTP ${response.status}: an API key is required — set HERMES_API_KEY (get one from Pyth; a free trial exists).`);
+      }
       if (!response.ok) throw new Error(`Hermes HTTP ${response.status}`);
       return response.json();
     },
