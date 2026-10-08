@@ -18,3 +18,4 @@
 /app/public/deployment.json
 /app/dist
 /deployments
+/app/public/deployment.fork.json

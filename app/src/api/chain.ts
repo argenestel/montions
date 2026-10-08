@@ -40,7 +40,9 @@ export async function loadDeployment(): Promise<Deployment | undefined> {
     // Dev only: `?deployment=testnet` loads /deployment.testnet.json instead of /deployment.json (look at another network without rebuilding).
     const alt = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("deployment") : null;
     const file = alt && /^[a-z0-9-]+$/.test(alt) ? `deployment.${alt}.json` : "deployment.json";
-    const r = await fetch(`${import.meta.env.BASE_URL}${file}`, { cache: "no-store" });
+    let r = await fetch(`${import.meta.env.BASE_URL}${file}`, { cache: "no-store" });
+    // Until a mainnet manifest is published, production serves the testnet deployment instead of an empty page.
+    if ((!r.ok || !(await r.clone().text()).trim().startsWith("{")) && file === "deployment.json") r = await fetch(`${import.meta.env.BASE_URL}deployment.testnet.json`, { cache: "no-store" });
     if (!r.ok) return undefined;
     const text = await r.text();
     if (!text.trim().startsWith("{")) return undefined;
@@ -195,7 +197,8 @@ export function createChainApi(deployment: Deployment): Api {
       const out: ConnectKind[] = [];
       if (passkeySupported()) out.push("passkey", "passkey-new");
       if (useDevWallet) out.push("dev");
-      if (listWallets().length) out.push("injected");
+      // A local fork reuses chain id 143: real wallets must not be pointed at it (they would add a fake "Monad" chain). `?injected` opts in.
+      if (listWallets().length && !useDevWallet) out.push("injected");
       return out;
     },
     onWalletChange(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },
@@ -204,7 +207,7 @@ export function createChainApi(deployment: Deployment): Api {
       const [block, paused, cap, total] = await Promise.all([publicClient.getBlockNumber(), readExtra<boolean>("paused", false), readExtra<bigint | undefined>("collateralCap", undefined), readExtra<bigint | undefined>("totalCollateral", undefined)]);
       const big = (v?: bigint) => (v === undefined || v > 10n ** 30n ? undefined : Number(v) / USDC);
       return {
-        name: chain.name, chainId: deployment.chainId, block: Number(block), explorer, rpc: deployment.rpc, mock: false, network, paused,
+        name: isLocal ? "Local fork" : chain.name, chainId: deployment.chainId, block: Number(block), explorer, rpc: deployment.rpc, mock: false, network, paused,
         collateralCapUsd: big(cap), totalCollateralUsd: big(total),
         contracts: Object.entries(c).map(([name, address]) => ({ name, address, role: ROLES[name] ?? "" })),
       };
