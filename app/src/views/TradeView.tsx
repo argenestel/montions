@@ -82,8 +82,8 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
       <section>
         <div className="eyebrow">
           <span className="tag dark">Binary option</span>
-          <span className="tag soft">{asset ? `${sym} ${price(spot)}` : "…"}{asset?.mock ? " · MOCK pool" : ""}</span>
-          <span className="tag soft">Settles onchain by 60s TWAP</span>
+          <span className="tag soft">{asset ? `${sym} ${price(spot)}` : "…"}{asset?.mock ? " · DEMO oracle" : " · Pyth"}</span>
+          <span className="tag soft">{asset?.mock ? "Settles by 60s TWAP of a demo pool" : "Settles on Pyth's first price at expiry"}</span>
         </div>
 
         <h1 className="sentence">

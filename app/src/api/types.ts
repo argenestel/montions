@@ -77,6 +77,7 @@ export interface ChainInfo {
   mock: boolean;        // true => dev mock, not connected to a deployment
   network: "mock" | "local" | "testnet" | "mainnet";
   paused: boolean;      // Book is paused for NEW risk (exits always work)
+  faucet?: boolean;     // collateral token has a public faucet() (test USDC)
   collateralCapUsd?: number; totalCollateralUsd?: number;
   contracts: { name: string; address: string; role: string }[];
 }

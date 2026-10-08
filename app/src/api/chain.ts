@@ -42,7 +42,8 @@ const eth = (): Eth | undefined => (globalThis as unknown as { ethereum?: Eth })
 const num = (b: bigint) => Number(b);
 
 export function createChainApi(deployment: Deployment): Api {
-  const isLocal = deployment.chainId === 31337;
+  // "local" = anvil (31337) or any fork served from localhost (e.g. scripts/fork-demo.sh) — fake money, built-in dev wallet.
+  const isLocal = deployment.chainId === 31337 || deployment.network === "local" || /^https?:\/\/(127\.0\.0\.1|localhost)/.test(deployment.rpc);
   const network: ChainInfo["network"] = deployment.network ?? (isLocal ? "local" : deployment.chainId === MONAD_MAINNET_ID ? "mainnet" : "testnet");
   // Local anvil: built-in DEV wallet from the node's unlocked accounts (no MetaMask, no keys in the page). `?injected` forces the browser wallet.
   const useDevWallet = isLocal && typeof location !== "undefined" && !new URLSearchParams(location.search).has("injected");
@@ -141,6 +142,8 @@ export function createChainApi(deployment: Deployment): Api {
     try { return parseInt((await e.request({ method: "eth_chainId" })) as string, 16); } catch { return undefined; }
   };
 
+  let hasFaucet: boolean | undefined;
+  const detectFaucet = async () => { if (hasFaucet === undefined) { try { const code = await publicClient.getCode({ address: c.collateral as Address }); hasFaucet = !!code && code.toLowerCase().includes("de5f72fd"); } catch { hasFaucet = false; } } return hasFaucet; };
   const readExtra = async <T,>(fn: "paused" | "collateralCap" | "totalCollateral", fallbackValue: T): Promise<T> => {
     try { return (await publicClient.readContract({ address: c.book as Address, abi: bookExtraAbi, functionName: fn })) as T; } catch { return fallbackValue; }
   };
@@ -179,7 +182,7 @@ export function createChainApi(deployment: Deployment): Api {
       };
     },
     async assets(): Promise<Asset[]> {
-      await scanNew();
+      if (scanned === 0) { void scanNew(); }
       return Promise.all(deployment.assets.map(async (a) => {
         let spot = 0;
         const oracle = oracleFor(a);
@@ -191,7 +194,9 @@ export function createChainApi(deployment: Deployment): Api {
     },
     async seriesFor(sym) {
       const a = assetBySym.get(sym); if (!a) return [];
-      await scanNew(); await refreshAsset(a.assetId);
+      // Progressive: wait only for the FIRST page; keep indexing the rest in the background (the UI polls again in a few seconds).
+      if (scanned === 0) { const first = scanNew(); await Promise.race([first, new Promise((r) => setTimeout(r, 4000))]); } else void scanNew();
+      await refreshAsset(a.assetId);
       return [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].map((id) => toView(snapById.get(id)!)).filter((v): v is SeriesView => !!v);
     },
     async depth(id, levels = 8) {

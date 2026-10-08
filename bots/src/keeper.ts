@@ -73,11 +73,11 @@ interface KeeperClients {
   context: BotContext;
   tx: SerialTx;
   book: Address;
-  hub: Address;
+  hub?: Address;
   vault?: Address;
   quoter?: Address;
-  twapResolver: Address;
-  oracleHub: Address;
+  twapResolver?: Address;
+  oracleHub?: Address;
   pythResolver?: Address;
   pythOracle?: Address;
   pythCore?: Address;
@@ -167,11 +167,13 @@ async function readSpot(clients: KeeperClients, config: KeeperConfig, asset: { s
 
 async function checkpointPools(clients: KeeperClients, config: KeeperConfig): Promise<number> {
   if (config.mode !== "pool") return 0;
+  const hub = clients.hub;
+  if (!hub) throw new Error("KEEPER_MODE=pool requires contracts.oracleHub in the deployment manifest");
   let n = 0;
   for (const asset of clients.context.deployment.assets) {
     await sendTx(clients, config, `${asset.symbol} oracle checkpoint`, () =>
       clients.context.walletClient!.writeContract({
-        address: clients.hub,
+        address: hub,
         abi: hubAbi,
         functionName: "checkpoint",
         args: [asset.assetId],
@@ -488,11 +490,11 @@ async function main(): Promise<void> {
     context,
     tx: new SerialTx(),
     book: addressAt(context.deployment, "book"),
-    hub: addressAt(context.deployment, "oracleHub"),
+    hub: optionalAddress(context.deployment, "oracleHub"),
     vault: optionalAddress(context.deployment, "vault"),
     quoter: optionalAddress(context.deployment, "quoter"),
-    twapResolver: addressAt(context.deployment, "twapResolver"),
-    oracleHub: addressAt(context.deployment, "oracleHub"),
+    twapResolver: optionalAddress(context.deployment, "twapResolver"),
+    oracleHub: optionalAddress(context.deployment, "oracleHub"),
     pythResolver: optionalAddress(context.deployment, "pythSettlementResolver", "pythResolver"),
     pythOracle: optionalAddress(context.deployment, "pythOracle"),
     pythCore: optionalAddress(context.deployment, "pyth") ?? (process.env.PYTH_ADDRESS as Address | undefined),

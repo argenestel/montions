@@ -15,7 +15,7 @@ export function Header(props: { info?: ChainInfo; account?: AccountView; onConne
           {account?.address ? (
             <>
               <span className="chip"><b>{usd(account.usdc)}</b> {info?.network === "mainnet" ? "USDC" : "tUSDC"}</span>
-              {info?.network !== "mainnet" && <button className="btn" onClick={props.onFaucet}>+ Faucet</button>}
+              {info?.faucet !== false && info?.network !== "mainnet" && <button className="btn" onClick={props.onFaucet}>+ Faucet</button>}
               <span className="chip mono">{short(account.address)}</span>
             </>
           ) : <button className="btn primary" onClick={props.onConnect}>Connect wallet</button>}

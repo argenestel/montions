@@ -20,3 +20,4 @@ deployments/*.meta.json
 deployments/10143.json
 deployments/143.json
 deployments/31337.json
+.dev/fork-demo/
