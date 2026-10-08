@@ -1,5 +1,6 @@
 import type { AccountView, ChainInfo } from "../api/types";
 import { short, usd } from "../lib/format";
+import { InstallButton } from "./InstallButton";
 import { useBlip } from "./Motion";
 
 export function Header(props: { info?: ChainInfo; account?: AccountView; walletKind?: string; onConnect: () => void; onAccount: () => void; onFaucet: () => void }) {
@@ -9,8 +10,9 @@ export function Header(props: { info?: ChainInfo; account?: AccountView; walletK
     <>
       {info?.mock && <div className="mockbar">DEV MOCK — simulated contracts, no chain. Deploy the contracts and set VITE_DEPLOYMENT to use the real onchain app.</div>}
       <header className="header">
-        <div className="logo"><span className="logo-mark" /> <span className="logo-t">montions</span></div>
+        <div className="logo"><img className="logo-mark" src="/mark.svg" alt="" width={28} height={28} /> <span className="logo-t">montions</span></div>
         <div className="header-right">
+          <InstallButton className="btn btn-install" />
           <span className="chip chip-net"><span className={`dot ${info?.mock ? "warn" : ""} ${blip ? "blip" : ""}`} /> {info ? <><b>{info.mock ? "mock" : info.name}</b> block <span className="mono">{info.block.toLocaleString()}</span></> : "connecting…"}</span>
           {account?.address ? (
             <>

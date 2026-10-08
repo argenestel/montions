@@ -112,7 +112,9 @@ export interface Api {
   peek(address: Hex): Promise<{ usdc: number; native: number }>;
   /** Which sign-in methods this deployment offers. */
   connectOptions(): ConnectKind[];
-  connect(kind?: ConnectKind): Promise<AccountView>;
+  /** Browser wallets found on this page (EIP-6963). */
+  wallets(): { id: string; name: string; icon?: string }[];
+  connect(kind?: ConnectKind, walletId?: string): Promise<AccountView>;
   account(): Promise<AccountView>;
   faucet(): Promise<void>;
   positions(): Promise<Position[]>;

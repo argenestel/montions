@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { AccountView, Hex } from "../api/types";
 import { usd, short } from "../lib/format";
 import { useApi } from "../lib/hooks";
+import { InstallButton } from "./InstallButton";
 
 type Row = { index: number; address: Hex; active: boolean; usdc?: number; native?: number };
 
@@ -54,7 +55,8 @@ export function AccountSheet(props: { account?: AccountView; symbol: string; onC
           </div>
         )}
         {err && <p className="warnline" role="alert" style={{ marginTop: 10 }}>{err}</p>}
-        <button className="btn" style={{ width: "100%", marginTop: 14 }} disabled={busy} onClick={() => { props.onDisconnect(); props.onClose(); }}>Disconnect</button>
+        <InstallButton className="btn" style={{ width: "100%", marginTop: 14 }} />
+        <button className="btn" style={{ width: "100%", marginTop: 8 }} disabled={busy} onClick={() => { props.onDisconnect(); props.onClose(); }}>Disconnect</button>
         <button className="btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={busy} onClick={props.onClose}>Close</button>
       </div>
     </div>,

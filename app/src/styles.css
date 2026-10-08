@@ -56,8 +56,7 @@ input { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 .logo { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 20px; letter-spacing: -0.02em; }
-.logo-mark { width: 26px; height: 26px; border-radius: 8px; background: conic-gradient(from 210deg, var(--violet), var(--yes), var(--violet)); display: grid; place-items: center; }
-.logo-mark::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); }
+.logo-mark { width: 28px; height: 28px; border-radius: 8px; }
 .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 
 .chip {
@@ -397,3 +396,8 @@ button, .btn, .cta, .chip { touch-action: manipulation; -webkit-tap-highlight-co
 .acct.on { border-color: var(--violet); }
 .acct .btn { margin: 10px 12px 10px 0; align-self: center; }
 .acct .badge { margin-left: 6px; }
+.wl { display: flex; align-items: center; gap: 12px; text-align: left; }
+.wl img { border-radius: 8px; }
+.wl-ic { width: 28px; text-align: center; font-size: 20px; }
+a.rowcard.optbtn { text-decoration: none; color: inherit; }
+@media (max-width: 720px) { .btn-install { display: none; } }

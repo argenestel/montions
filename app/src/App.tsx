@@ -65,9 +65,9 @@ export default function App() {
 
   // Opens the connect sheet (passkey / browser wallet / dev wallet). Resolves when the sheet closes.
   const connect = useCallback(async () => { setConnectOpen(true); }, []);
-  const doConnect = useCallback(async (kind: ConnectKind) => {
+  const doConnect = useCallback(async (kind: ConnectKind, walletId?: string) => {
     if (!api) return;
-    const acct = await api.connect(kind);               // throws a readable Error on failure; the sheet shows it
+    const acct = await api.connect(kind, walletId);               // throws a readable Error on failure; the sheet shows it
     setAccount(acct); setWallet(await api.wallet()); setConnectOpen(false);
   }, [api]);
   const disconnect = useCallback(() => { api?.disconnect(); setAccount(undefined); setWallet(undefined); }, [api]);
@@ -104,7 +104,7 @@ export default function App() {
             ))}
           </nav>
           {accountOpen && <AccountSheet account={account} symbol={info?.collateralSymbol ?? "USDC"} onChanged={refresh} onDisconnect={disconnect} onClose={() => setAccountOpen(false)} />}
-          {connectOpen && <ConnectSheet options={api.connectOptions()} onConnect={doConnect} onClose={() => setConnectOpen(false)} />}
+          {connectOpen && <ConnectSheet options={api.connectOptions()} wallets={api.wallets()} onConnect={doConnect} onClose={() => setConnectOpen(false)} />}
           {toast && <div className="toast" role="status">{toast}</div>}
         </div>
       </CollateralCtx.Provider>

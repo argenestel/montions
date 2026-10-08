@@ -9,6 +9,12 @@ What is actually wired in, and what it takes to use it. Nothing here is claimed 
 | **Agora / AUSD** | Alternative collateral: `COLLATERAL=AUSD scripts/mainnet-deploy.sh`. The permit signer reads AUSD's ERC-5267 domain (`"Agora Dollar"`, v1) and verifies it against `DOMAIN_SEPARATOR()`. Mobile-first PWA. **AUSD exists on mainnet only** — there is no AUSD on Monad testnet, so the testnet uses a mintable test token. | `sdk/src/client.ts` (`matchPermitDomain`), `scripts/mainnet-deploy.sh` |
 | **RPC providers** | The app fails over across several endpoints. Keyless public endpoints are in every manifest (`scripts/finish-manifest.mjs`). Provider endpoints that carry an API key (Chainstack, Alchemy, QuickNode, Dwellir, BlockVision, Crouton, Spectrum) can be put in front with `RPCS=…` at manifest time, or `VITE_RPC_URLS=…` at build time. Keys in a static page are visible to users: use domain-restricted keys. | `app/src/api/chain.ts`, `scripts/finish-manifest.mjs` |
 
+## Wallets, PWA, logo
+
+- **Wallets:** passkey (Mera) or any browser wallet. Wallets are discovered with EIP-6963 (MetaMask, Rabby, Phantom, Coinbase… listed side by side), with `window.ethereum` as a fallback. On a phone without an injected wallet the sheet offers "Open in MetaMask app". Passkey accounts send through the same multi-endpoint RPC failover as reads.
+- **PWA:** web manifest + service worker (`app/public/sw.js`): installable, and the app shell starts offline. Trading itself needs the network. RPC, the manifest `deployment.json` and wallet traffic are never cached.
+- **Logo:** designed with Codex (gpt-6-luna); sources in `docs/brand/` (mark, maskable mark, wordmark, favicon).
+
 ## Using sponsor RPC endpoints
 
 ```bash

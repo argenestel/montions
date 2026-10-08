@@ -89,6 +89,7 @@ export const mockApi: Api = {
   async switchNetwork() {},
   disconnect() { state.connected = false; },
   connectOptions() { return ["dev"]; },
+  wallets() { return []; },
   passkeyAccounts() { return []; },
   async switchPasskeyAccount(_i: number) { return mockApi.account(); },
   async peek(_a: string) { return { usdc: 0, native: 0 }; },

@@ -3,6 +3,7 @@ import { createPublicClient, createWalletClient, custom, decodeAbiParameters, de
 import { MontionsClient, MULTICALL3_ADDRESS, makerVaultAbi, monadTestnet, parseDeployment, priceOracleAbi, type Deployment, type QuoterSnapshot } from "@montions/sdk";
 import { explain, isUserRejection } from "../lib/errors";
 import { gasPadded } from "../lib/gasPad";
+import { listWallets, startWalletDiscovery, walletById } from "../lib/wallets";
 import { createPasskeyAccount, endPasskeySession, explainPasskey, passkeyAccountAddresses, passkeyAccountIndex, passkeySupported, signInWithPasskey, switchPasskeyAccount, touchPasskeySession, type PasskeySession } from "../lib/passkey";
 import type { AccountView, Api, Asset, ChainInfo, ConnectKind, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView, WalletState } from "./types";
 
@@ -48,7 +49,9 @@ export async function loadDeployment(): Promise<Deployment | undefined> {
 }
 
 type Eth = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; on?: (ev: string, cb: (...a: unknown[]) => void) => void; removeListener?: (ev: string, cb: (...a: unknown[]) => void) => void };
-const eth = (): Eth | undefined => (globalThis as unknown as { ethereum?: Eth }).ethereum;
+startWalletDiscovery();
+let chosenWallet: Eth | undefined;
+const eth = (): Eth | undefined => chosenWallet ?? (listWallets()[0]?.provider as Eth | undefined);
 const num = (b: bigint) => Number(b);
 
 export function createChainApi(deployment: Deployment): Api {
@@ -143,7 +146,7 @@ export function createChainApi(deployment: Deployment): Api {
   let attached = false;
   const applyPasskey = (session: PasskeySession) => {
     address = session.account.address;
-    const walletClient = createWalletClient({ account: session.account, chain, transport: gasPadded(http(rpcs[0], { retryCount: 2, timeout: 12_000 })) });
+    const walletClient = createWalletClient({ account: session.account, chain, transport: gasPadded(transport) });
     client = new MontionsClient({ deployment, publicClient, walletClient });
   };
   const rebuildWallet = (e: Eth) => {
@@ -191,8 +194,8 @@ export function createChainApi(deployment: Deployment): Api {
     connectOptions(): ConnectKind[] {
       const out: ConnectKind[] = [];
       if (passkeySupported()) out.push("passkey", "passkey-new");
-      if (useDevWallet) out.push("dev"); else if (eth()) out.push("injected");
-      if (isLocal && !useDevWallet && !out.includes("injected") && eth()) out.push("injected");
+      if (useDevWallet) out.push("dev");
+      if (listWallets().length) out.push("injected");
       return out;
     },
     onWalletChange(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },
@@ -297,7 +300,8 @@ export function createChainApi(deployment: Deployment): Api {
       const [usdc, native] = await Promise.all([publicClient.readContract({ address: c.collateral as Address, abi: parseAbi(["function balanceOf(address) view returns (uint256)"]), functionName: "balanceOf", args: [addr as Address] }) as Promise<bigint>, publicClient.getBalance({ address: addr as Address })]);
       return { usdc: Number(usdc) / USDC, native: Number(native) / WAD };
     },
-    async connect(want?: ConnectKind): Promise<AccountView> {
+    wallets() { return listWallets().map(({ id, name, icon }) => ({ id, name, icon })); },
+    async connect(want?: ConnectKind, walletId?: string): Promise<AccountView> {
       const choice: ConnectKind = want ?? (useDevWallet ? "dev" : eth() ? "injected" : "passkey");
       if (choice === "passkey" || choice === "passkey-new") {
         try {
@@ -316,6 +320,7 @@ export function createChainApi(deployment: Deployment): Api {
         emit();
         return this.account();
       }
+      chosenWallet = (walletById(walletId)?.provider as Eth | undefined) ?? chosenWallet;
       const e = eth(); if (!e) throw new Error("No browser wallet found. Use a passkey instead, or install MetaMask / Rabby.");
       const [acct] = (await e.request({ method: "eth_requestAccounts" })) as Address[];
       address = acct; kind = "injected";
