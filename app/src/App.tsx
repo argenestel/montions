@@ -1,23 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { mockApi } from "./api/mock";
 import { createChainApi, loadDeployment } from "./api/chain";
-import type { AccountView, Api, ChainInfo, WalletState } from "./api/types";
+import type { AccountView, Api, ChainInfo, ConnectKind, WalletState } from "./api/types";
 import { Header } from "./components/Header";
 import { Banners, ErrorBoundary, RiskGate } from "./components/Resilience";
 import { explain } from "./lib/errors";
 import { withHealth, type Health } from "./lib/health";
-import { ApiCtx } from "./lib/hooks";
+import { ApiCtx, CollateralCtx } from "./lib/hooks";
+import { ConnectSheet } from "./components/ConnectSheet";
 import { PositionsView } from "./views/PositionsView";
 import { ProofView } from "./views/ProofView";
 import { TradeView } from "./views/TradeView";
 import { VaultView } from "./views/VaultView";
 
 type Tab = "trade" | "positions" | "vault" | "proof";
-const TABS: { id: Tab; icon: string; label: string }[] = [
-  { id: "trade", icon: "↗", label: "Trade" },
-  { id: "positions", icon: "◔", label: "Positions" },
-  { id: "vault", icon: "◎", label: "Vault" },
-  { id: "proof", icon: "⛓", label: "Onchain" },
+const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
+const TABS: { id: Tab; icon: ReactElement; label: string }[] = [
+  { id: "trade", icon: <Ico d="M4 16l5-5 4 4 7-8M15 7h5v5" />, label: "Trade" },
+  { id: "positions", icon: <Ico d="M12 3v9h9M20.5 15A9 9 0 1112 3" />, label: "Positions" },
+  { id: "vault", icon: <Ico d="M4 8h16v11H4zM8 8V6a4 4 0 018 0v2M12 13v2" />, label: "Vault" },
+  { id: "proof", icon: <Ico d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3A4 4 0 0011 18.7l1-1" />, label: "Onchain" },
 ];
 
 // The simulated API exists for UI development only. A production build never falls back to it silently.
@@ -41,6 +43,7 @@ export default function App() {
   const [info, setInfo] = useState<ChainInfo>();
   const [wallet, setWallet] = useState<WalletState>();
   const [toast, setToast] = useState<string>();
+  const [connectOpen, setConnectOpen] = useState(false);
   const say = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(undefined), 5000); }, []);
 
   const refresh = useCallback(async () => {
@@ -58,10 +61,14 @@ export default function App() {
     return () => { alive = false; clearTimeout(t); off(); };
   }, [api, refresh]);
 
-  const connect = useCallback(async () => {
+  // Opens the connect sheet (passkey / browser wallet / dev wallet). Resolves when the sheet closes.
+  const connect = useCallback(async () => { setConnectOpen(true); }, []);
+  const doConnect = useCallback(async (kind: ConnectKind) => {
     if (!api) return;
-    try { setAccount(await api.connect()); setWallet(await api.wallet()); } catch (e) { say(explain(e)); }
-  }, [api, say]);
+    const acct = await api.connect(kind);               // throws a readable Error on failure; the sheet shows it
+    setAccount(acct); setWallet(await api.wallet()); setConnectOpen(false);
+  }, [api]);
+  const disconnect = useCallback(() => { api?.disconnect(); setAccount(undefined); setWallet(undefined); }, [api]);
   const switchNet = useCallback(async () => { try { await api?.switchNetwork(); await refresh(); } catch (e) { say(explain(e)); } }, [api, say, refresh]);
 
   if (state === "undeployed") {
@@ -77,9 +84,10 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ApiCtx.Provider value={api}>
+      <CollateralCtx.Provider value={info?.collateralSymbol ?? "USDC"}>
         <div className="app">
-          <Header info={info} account={account} onConnect={connect} onFaucet={async () => { try { await api.faucet(); await refresh(); } catch (e) { say(explain(e)); } }} />
-          <Banners info={info} wallet={wallet} health={health} onSwitch={switchNet} onRetry={() => { setHealth({ failing: false }); refresh(); }} />
+          <Header info={info} account={account} walletKind={wallet?.kind} onDisconnect={disconnect} onConnect={connect} onFaucet={async () => { try { await api.faucet(); await refresh(); } catch (e) { say(explain(e)); } }} />
+          <Banners info={info} wallet={wallet} account={account} health={health} onSwitch={switchNet} onRetry={() => { setHealth({ failing: false }); refresh(); }} />
           <RiskGate info={info}>
             <main key={tab} className="view">
               {tab === "trade" && <TradeView account={account} wallet={wallet} info={info} onNeedConnect={connect} onToast={say} />}
@@ -93,8 +101,10 @@ export default function App() {
               <button key={t.id} className={tab === t.id ? "sel" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}><span aria-hidden="true">{t.icon}</span><span className="t">{t.label}</span></button>
             ))}
           </nav>
+          {connectOpen && <ConnectSheet options={api.connectOptions()} onConnect={doConnect} onClose={() => setConnectOpen(false)} />}
           {toast && <div className="toast" role="status">{toast}</div>}
         </div>
+      </CollateralCtx.Provider>
       </ApiCtx.Provider>
     </ErrorBoundary>
   );

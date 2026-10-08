@@ -8,15 +8,15 @@ const base = { chainId: 143, rpc: "https://rpc.monad.xyz", contracts: { book: A,
 describe("deployment manifest v2", () => {
   it("accepts a Pyth-priced asset without pool/token", () => {
     const d = parseDeployment({ ...base, network: "mainnet", rpcs: ["https://rpc1.monad.xyz", "ftp://bad"], explorer: "https://monadvision.com/", assets: [{ symbol: "MON", assetId: ID, decimals: 18, oracle: "pyth", feedId: ID }] });
-    expect(d.assets[0].oracle).toBe("pyth");
-    expect(d.assets[0].pool).toBeUndefined();
+    expect(d.assets[0]!.oracle).toBe("pyth");
+    expect(d.assets[0]!.pool).toBeUndefined();
     expect(d.rpcs).toEqual(["https://rpc1.monad.xyz"]);   // non-http(s) endpoints are dropped
     expect(d.explorer).toBe("https://monadvision.com");   // trailing slash stripped
     expect(d.network).toBe("mainnet");
   });
   it("infers oracle kind: pool when a pool is present", () => {
     const d = parseDeployment({ ...base, chainId: 31337, assets: [{ symbol: "MON", assetId: ID, decimals: 18, pool: A, token: A }] });
-    expect(d.assets[0].oracle).toBe("pool");
+    expect(d.assets[0]!.oracle).toBe("pool");
   });
   it("rejects a pool asset without pool/token and a Pyth asset without feedId", () => {
     expect(() => parseDeployment({ ...base, assets: [{ symbol: "X", assetId: ID, decimals: 18, oracle: "pool" }] })).toThrow(/pool and token/);

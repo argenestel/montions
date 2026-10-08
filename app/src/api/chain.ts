@@ -2,7 +2,9 @@
 import { createPublicClient, createWalletClient, custom, decodeAbiParameters, defineChain, fallback, http, parseAbi, type Address, type Chain, type PublicClient } from "viem";
 import { MontionsClient, MULTICALL3_ADDRESS, makerVaultAbi, monadTestnet, parseDeployment, priceOracleAbi, type Deployment, type QuoterSnapshot } from "@montions/sdk";
 import { explain, isUserRejection } from "../lib/errors";
-import type { AccountView, Api, Asset, ChainInfo, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView, WalletState } from "./types";
+import { gasPadded } from "../lib/gasPad";
+import { createPasskeyAccount, endPasskeySession, explainPasskey, passkeySupported, signInWithPasskey, touchPasskeySession } from "../lib/passkey";
+import type { AccountView, Api, Asset, ChainInfo, ConnectKind, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView, WalletState } from "./types";
 
 const WAD = 1e18, USDC = 1e6;
 const MONAD_MAINNET_ID = 143;
@@ -58,7 +60,7 @@ export function createChainApi(deployment: Deployment): Api {
   const publicClient = createPublicClient({ chain, transport, batch: { multicall: { wait: 16 } } }) as PublicClient;
   let client = new MontionsClient({ deployment, publicClient });
   let address: Address | undefined;
-  let usingDev = false;
+  let kind: ConnectKind | undefined;
 
   const c = deployment.contracts;
   const poolHub = (c.oracleHub ?? c.oracle) as Address | undefined;
@@ -137,11 +139,13 @@ export function createChainApi(deployment: Deployment): Api {
   };
 
   const walletChainId = async (): Promise<number | undefined> => {
-    if (usingDev) return deployment.chainId;
+    if (kind === "dev" || kind === "passkey" || kind === "passkey-new") return deployment.chainId;
     const e = eth(); if (!e || !address) return undefined;
     try { return parseInt((await e.request({ method: "eth_chainId" })) as string, 16); } catch { return undefined; }
   };
 
+  let collateralSym: string | undefined;
+  const readCollateralSymbol = async () => { if (!collateralSym) { try { collateralSym = (await publicClient.readContract({ address: c.collateral as Address, abi: parseAbi(["function symbol() view returns (string)"]), functionName: "symbol" })) as string; } catch { collateralSym = "USDC"; } } return collateralSym; };
   let hasFaucet: boolean | undefined;
   const detectFaucet = async () => { if (hasFaucet === undefined) { try { const code = await publicClient.getCode({ address: c.collateral as Address }); hasFaucet = !!code && code.toLowerCase().includes("de5f72fd"); } catch { hasFaucet = false; } } return hasFaucet; };
   const readExtra = async <T,>(fn: "paused" | "collateralCap" | "totalCollateral", fallbackValue: T): Promise<T> => {
@@ -157,7 +161,8 @@ export function createChainApi(deployment: Deployment): Api {
     mode: "chain",
     async wallet(): Promise<WalletState> {
       const id = await walletChainId();
-      return { address, chainId: id, expectedChainId: deployment.chainId, wrongNetwork: id !== undefined && id !== deployment.chainId };
+      touchPasskeySession();
+      return { address, chainId: id, expectedChainId: deployment.chainId, wrongNetwork: id !== undefined && id !== deployment.chainId, kind };
     },
     async switchNetwork() {
       const e = eth(); if (!e) throw new Error("No wallet found.");
@@ -169,7 +174,14 @@ export function createChainApi(deployment: Deployment): Api {
       }
       emit();
     },
-    disconnect() { address = undefined; usingDev = false; client = new MontionsClient({ deployment, publicClient }); emit(); },
+    disconnect() { endPasskeySession(); address = undefined; kind = undefined; client = new MontionsClient({ deployment, publicClient }); emit(); },
+    connectOptions(): ConnectKind[] {
+      const out: ConnectKind[] = [];
+      if (passkeySupported()) out.push("passkey", "passkey-new");
+      if (useDevWallet) out.push("dev"); else if (eth()) out.push("injected");
+      if (isLocal && !useDevWallet && !out.includes("injected") && eth()) out.push("injected");
+      return out;
+    },
     onWalletChange(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },
 
     async chainInfo(): Promise<ChainInfo> {
@@ -184,12 +196,16 @@ export function createChainApi(deployment: Deployment): Api {
     async assets(): Promise<Asset[]> {
       if (scanned === 0) { void scanNew(); }
       return Promise.all(deployment.assets.map(async (a) => {
-        let spot = 0;
+        let spot = 0, stale = false;
         const oracle = oracleFor(a);
-        if (oracle) { const [p] = (await publicClient.readContract({ address: oracle, abi: priceOracleAbi, functionName: "latestPrice", args: [a.assetId] })) as [bigint, bigint]; spot = Number(p) / WAD; }
+        if (oracle) {
+          // One bad/stale feed must never take down the whole asset list.
+          try { const [p] = (await publicClient.readContract({ address: oracle, abi: priceOracleAbi, functionName: "latestPrice", args: [a.assetId] })) as [bigint, bigint]; spot = Number(p) / WAD; }
+          catch { stale = true; }
+        }
         const vols = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].map((id) => snapById.get(id)!).filter((r) => r.volWad > 0n).map((r) => Number(r.volWad) / WAD);
         const mock = a.mock ?? a.oracle !== "pyth";
-        return { symbol: a.symbol, name: a.name ?? (mock ? `${a.symbol} (demo pool)` : a.symbol), assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock, tier: a.tier };
+        return { symbol: a.symbol, name: a.name ?? (mock ? `${a.symbol} (demo pool)` : a.symbol), assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock, tier: a.tier, stale };
       }));
     },
     async seriesFor(sym) {
@@ -253,17 +269,30 @@ export function createChainApi(deployment: Deployment): Api {
         return { ok: false, filled: 0, cost: 0, error: explain(e) };
       }
     },
-    async connect(): Promise<AccountView> {
-      if (useDevWallet) {
+    async connect(want?: ConnectKind): Promise<AccountView> {
+      const choice: ConnectKind = want ?? (useDevWallet ? "dev" : eth() ? "injected" : "passkey");
+      if (choice === "passkey" || choice === "passkey-new") {
+        try {
+          const expire = () => { address = undefined; kind = undefined; client = new MontionsClient({ deployment, publicClient }); emit(); };
+          const session = choice === "passkey" ? await signInWithPasskey(expire) : await createPasskeyAccount("Montions trader", expire);
+          address = session.account.address; kind = choice;
+          const walletClient = createWalletClient({ account: session.account, chain, transport: gasPadded(http(rpcs[0], { retryCount: 2, timeout: 12_000 })) });
+          client = new MontionsClient({ deployment, publicClient, walletClient });
+          emit();
+          return this.account();
+        } catch (e) { throw new Error(explainPasskey(e)); }
+      }
+      if (choice === "dev") {
         const accts = (await publicClient.request({ method: "eth_accounts" } as never)) as Address[];
-        address = accts[5] ?? accts[accts.length - 1]; usingDev = true;
+        address = accts[5] ?? accts[accts.length - 1]; kind = "dev";
         const walletClient = createWalletClient({ account: address, chain, transport: http(deployment.rpc) });
         client = new MontionsClient({ deployment, publicClient, walletClient });
+        emit();
         return this.account();
       }
-      const e = eth(); if (!e) throw new Error("No wallet found. Install MetaMask, Rabby or another EVM wallet.");
+      const e = eth(); if (!e) throw new Error("No browser wallet found. Use a passkey instead, or install MetaMask / Rabby.");
       const [acct] = (await e.request({ method: "eth_requestAccounts" })) as Address[];
-      address = acct; usingDev = false;
+      address = acct; kind = "injected";
       if (!attached) { attach(e); attached = true; }
       rebuildWallet(e);
       const id = await walletChainId();

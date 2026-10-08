@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChainInfo, Quote, SeriesView, Step, TxResult } from "../api/types";
 import { price, usd, whenText } from "../lib/format";
-import { useApi } from "../lib/hooks";
+import { useApi, useCollateral } from "../lib/hooks";
 import { PayoffChart } from "./PayoffChart";
 
 export function ConfirmSheet(props: {
@@ -11,6 +11,7 @@ export function ConfirmSheet(props: {
 }) {
   const { series, sym, spot, above, payout, contracts, mock, slip } = props;
   const api = useApi();
+  const collateral = useCollateral();
   const [ok, setOk] = useState(false);
   const [steps, setSteps] = useState<Step[]>([]);
   const [res, setRes] = useState<TxResult>();
@@ -68,7 +69,7 @@ export function ConfirmSheet(props: {
                 <div><dt>Price limit</dt><dd>{maxTick}¢ per $1 <span className="subnote">(slippage {slip}¢)</span></dd></div>
                 <div><dt>Matching</dt><dd>Onchain CLOB · price-time</dd></div>
                 <div><dt>Settlement</dt><dd>{mock ? `Contract · 60s TWAP of demo ${sym} pool` : "Contract · Pyth first price at expiry"}</dd></div>
-                <div><dt>Collateral</dt><dd>100% — pays {usd(payout)} from locked USDC</dd></div>
+                <div><dt>Collateral</dt><dd>100% — pays {usd(payout)} from locked {collateral}</dd></div>
               </dl>
               {moved && <div className="banner" style={{ position: "static", borderRadius: 12, marginTop: 10 }} role="alert">Price moved: {usd(moved.from, 2)} → {usd(moved.to, 2)}. Review and confirm again.</div>}
               <label className="check"><input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} />

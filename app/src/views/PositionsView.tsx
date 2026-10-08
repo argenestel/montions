@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { AccountView } from "../api/types";
 import { price, usd, whenText } from "../lib/format";
-import { useApi, usePoll } from "../lib/hooks";
+import { useApi, useCollateral, usePoll } from "../lib/hooks";
 
 export function PositionsView(props: { account?: AccountView; onChanged: () => void }) {
   const api = useApi();
+  const collateral = useCollateral();
   const [tick, setTick] = useState(0);
   const positions = usePoll(() => api.positions(), [api, tick], 3000);
   const orders = usePoll(() => api.orders(), [api, tick], 3000);
@@ -14,7 +15,7 @@ export function PositionsView(props: { account?: AccountView; onChanged: () => v
       <p className="page-sub">Read straight from the Book: outcome-token balances and resting orders. Nothing here comes from an indexer.</p>
       {props.account?.address && (
         <div className="stats">
-          <div className="stat"><div className="k">Wallet tUSDC</div><div className="v">{usd(props.account.usdc)}</div></div>
+          <div className="stat"><div className="k">Wallet {collateral}</div><div className="v">{usd(props.account.usdc)}</div></div>
           <div className="stat"><div className="k">Free cash in Book</div><div className="v">{usd(props.account.bookCash)}</div></div>
           <div className="stat"><div className="k">Locked in orders</div><div className="v">{usd(props.account.locked)}</div></div>
         </div>

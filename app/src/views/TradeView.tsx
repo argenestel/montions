@@ -71,7 +71,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
   const chance = chanceOf(selected);
   const strikePct = spot ? (strike ?? spot) / spot - 1 : 0;
 
-  const tradingBlocked = !!props.info?.paused || !!props.wallet?.wrongNetwork || (selected ? selected.expiry <= now + 30 : false);
+  const tradingBlocked = !!props.info?.paused || !!props.wallet?.wrongNetwork || !!asset?.stale || (selected ? selected.expiry <= now + 30 : false);
   const buy = async () => {
     if (!props.account?.address) { await props.onNeedConnect(); return; }
     setConfirm(true);
@@ -176,6 +176,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
           </PillPopover>
           {!props.account?.address && <span className="subnote">{props.info?.network === "mainnet" ? "Connect a wallet to trade." : "Connect a wallet to trade (test USDC faucet included)."}</span>}
           {props.info?.paused && <span className="warnline">Trading is paused.</span>}
+          {asset?.stale && <span className="warnline">{sym}'s price feed isn't updating right now, so trading is disabled for it. Pick another asset.</span>}
         </div>
 
         <div className="chartwrap card">

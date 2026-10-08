@@ -8,6 +8,7 @@ export interface Asset {
   vol: number;          // annualised, 1 = 100%
   mock: boolean;        // true => demo token / demo pool
   tier?: string;        // major | alt | wrapped (ladder depth)
+  stale?: boolean;      // price feed unavailable/stale right now: show it, but do not allow trading
 }
 
 export interface SeriesView {
@@ -78,6 +79,7 @@ export interface ChainInfo {
   network: "mock" | "local" | "testnet" | "mainnet";
   paused: boolean;      // Book is paused for NEW risk (exits always work)
   faucet?: boolean;     // collateral token has a public faucet() (test USDC)
+  collateralSymbol?: string; // e.g. USDC, AUSD, tUSDC
   collateralCapUsd?: number; totalCollateralUsd?: number;
   contracts: { name: string; address: string; role: string }[];
 }
@@ -85,7 +87,8 @@ export interface ChainInfo {
 export type Step = { label: string; state: "todo" | "active" | "done" | "error"; hash?: string };
 export interface TxResult { ok: boolean; filled: number; cost: number; hash?: string; block?: number; error?: string }
 
-export interface WalletState { address?: Hex; chainId?: number; expectedChainId: number; wrongNetwork: boolean }
+export type ConnectKind = "passkey" | "passkey-new" | "injected" | "dev";
+export interface WalletState { address?: Hex; chainId?: number; expectedChainId: number; wrongNetwork: boolean; kind?: ConnectKind }
 export interface Api {
   mode: "mock" | "chain";
   wallet(): Promise<WalletState>;
@@ -100,7 +103,9 @@ export interface Api {
   trades(seriesId: Hex): Promise<TradeRow[]>;
   quoteBuy(seriesId: Hex, yes: boolean, contracts: number): Promise<Quote>;
   buy(seriesId: Hex, yes: boolean, contracts: number, maxPriceTick: number, onStep: (s: Step[]) => void): Promise<TxResult>;
-  connect(): Promise<AccountView>;
+  /** Which sign-in methods this deployment offers. */
+  connectOptions(): ConnectKind[];
+  connect(kind?: ConnectKind): Promise<AccountView>;
   account(): Promise<AccountView>;
   faucet(): Promise<void>;
   positions(): Promise<Position[]>;

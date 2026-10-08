@@ -4,6 +4,10 @@ import type { Api } from "../api/types";
 export const ApiCtx = createContext<Api>(null as unknown as Api);
 export const useApi = () => useContext(ApiCtx);
 
+/** Symbol of the collateral token for this deployment (USDC, AUSD, tUSDC …). */
+export const CollateralCtx = createContext<string>("USDC");
+export const useCollateral = () => useContext(CollateralCtx);
+
 /** Poll an async function; keeps the last good value on errors and backs off (x2, max 30s) while failing. */
 export function usePoll<T>(fn: () => Promise<T>, deps: unknown[], ms = 4000): T | undefined {
   const [v, setV] = useState<T>();

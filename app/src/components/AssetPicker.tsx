@@ -25,7 +25,7 @@ export function AssetPicker(props: { assets: Asset[]; current: string; onPick: (
             {g.items.map((a) => (
               <button key={a.symbol} className={`opt ${a.symbol === props.current ? "sel" : ""}`} onClick={() => props.onPick(a.symbol)}>
                 <div><div className="l1">{a.symbol}{a.mock && <span className="tag soft" style={{ marginLeft: 8 }}>demo</span>}</div><div className="l2">{a.name}</div></div>
-                <span className="mono">{a.spot ? price(a.spot) : "—"}</span>
+                <span className="mono">{a.stale ? <span className="tag soft" title="Price feed is not updating right now">stale</span> : a.spot ? price(a.spot) : "—"}</span>
               </button>
             ))}
           </div>

@@ -1,3 +1,5 @@
+import { hashDomain } from "viem";
+import { matchPermitDomain, matchPermitVersion } from "../src/client.js";
 import { describe, expect, it } from "vitest";
 import {
   decodeFunctionData,
@@ -235,8 +237,11 @@ describe("permit domain", () => {
   it("signs Solady's versioned EIP-2612 domain", async () => {
     const account = privateKeyToAccount(`0x${"01".repeat(32)}`);
     const transport = custom({
-      request: async ({ method }) => {
+      request: async ({ method, params }) => {
         if (method === "eth_call") {
+          const data = ((params as [{ data?: string }])[0].data ?? "").toLowerCase();
+          if (data.startsWith("0x54fd4d50")) return encodeAbiParameters([{ type: "string" }], ["1"]);   // version()
+          if (data.startsWith("0x3644e515")) return hashDomain({ domain: { name: "Test USDC", version: "1", chainId: 10143n, verifyingContract: TOKEN }, types: { EIP712Domain: [{ name: "name", type: "string" }, { name: "version", type: "string" }, { name: "chainId", type: "uint256" }, { name: "verifyingContract", type: "address" }] } }); // DOMAIN_SEPARATOR()
           const results = [
             encodeFunctionResult({ abi: [{ type: "function", name: "name", inputs: [], outputs: [{ type: "string" }] }] as const, functionName: "name", result: "Test USDC" }),
             encodeFunctionResult({ abi: [{ type: "function", name: "value", inputs: [], outputs: [{ type: "uint256" }] }] as const, functionName: "value", result: 0n }),
@@ -346,5 +351,26 @@ describe("deployment validation", () => {
       s: `0x${"22".repeat(32)}`,
       signature: `0x${"00".repeat(65)}`,
     })).rejects.toThrow(/value does not match/);
+  });
+});
+
+
+describe("permit domain version", () => {
+  const token = "0x754704Bc059F8C67012fEd69BC8A327a5aafb603" as const;
+  const sep = (version: string) => hashDomain({ domain: { name: "USDC", version, chainId: 143n, verifyingContract: token }, types: { EIP712Domain: [{ name: "name", type: "string" }, { name: "version", type: "string" }, { name: "chainId", type: "uint256" }, { name: "verifyingContract", type: "address" }] } });
+  it("picks version 2 for a Circle-style token even when version() is unavailable", () => {
+    expect(matchPermitVersion({ candidates: ["2", "1"], separator: sep("2"), name: "USDC", chainId: 143, token })).toBe("2");
+  });
+  it("picks version 1 for an OZ/Solady-style token", () => {
+    expect(matchPermitVersion({ candidates: ["2", "1"], separator: sep("1"), name: "USDC", chainId: 143, token })).toBe("1");
+  });
+  it("fails loudly when no candidate matches", () => {
+    expect(() => matchPermitVersion({ candidates: ["2", "1"], separator: sep("9"), name: "USDC", chainId: 143, token })).toThrow(/DOMAIN_SEPARATOR/);
+  });
+  it("finds AUSD's ERC-5267 name (\"Agora Dollar\") when name() says \"AUSD\"", () => {
+    const ausd = "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a" as const;
+    const separator = "0x995063441ebf2219c94dce05014a545da4390d2362f99b3d7ad456046678cafe" as const;
+    expect(matchPermitDomain({ names: ["Agora Dollar", "AUSD"], versions: ["1", "2"], separator, chainId: 143, token: ausd })).toEqual({ name: "Agora Dollar", version: "1" });
+    expect(() => matchPermitDomain({ names: ["AUSD"], versions: ["1", "2"], separator, chainId: 143, token: ausd })).toThrow(/DOMAIN_SEPARATOR/);
   });
 });

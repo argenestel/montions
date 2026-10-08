@@ -14,6 +14,12 @@ echo "mainnet deployer $ADDR  balance $BAL MON  (needs >= $NEED MON: ~3.2 MON de
 python3 -c "import sys; sys.exit(0 if float('$BAL') >= float('$NEED') else 1)" || { echo "Not enough MON. Fund: $ADDR"; exit 2; }
 python3 scripts/feeds.py >/dev/null || true     # refresh + re-verify the live feed catalogue just before deploying
 echo "enabled feeds: $(jq '[.feeds[]|select(.enabled)]|length' config/pyth-feeds.json)"
+# COLLATERAL=USDC (default, Circle native) or COLLATERAL=AUSD (Agora) — or set USDC=<any 6-decimal EIP-2612 token> explicitly.
+case "${COLLATERAL:-USDC}" in
+  USDC) ;;
+  AUSD) export USDC="${USDC:-0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a}";;
+  *) echo "COLLATERAL must be USDC or AUSD"; exit 1;;
+esac
 export OWNER_SAFE="${OWNER_SAFE:-$ADDR}"        # no Safe yet: deployer remains owner. Hand over later with script/HandoverOwnership.s.sol
 export COLLATERAL_CAP_USDC="${COLLATERAL_CAP_USDC:-5000}" SERIES_POOL_CAP_USDC="${SERIES_POOL_CAP_USDC:-250}" DEPLOY_VAULT="${DEPLOY_VAULT:-0}" VAULT_CAP_USDC="${VAULT_CAP_USDC:-2000}"
 echo "caps: total ${COLLATERAL_CAP_USDC} USDC, per-series ${SERIES_POOL_CAP_USDC} USDC, vault=${DEPLOY_VAULT}"

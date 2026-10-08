@@ -129,6 +129,11 @@ export interface PythSettleDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
+/** Hermes rejected our credentials (401/403). Retrying cannot help, so callers stop immediately. */
+export class HermesAuthError extends Error {
+  constructor(status: number) { super(`Hermes HTTP ${status}: an API key is required — set HERMES_API_KEY (or put it in .dev/hermes.key). Get one from Pyth; a free trial exists.`); this.name = "HermesAuthError"; }
+}
+
 export type PythSettleStatus = "settled" | "already" | "too_early" | "not_found";
 
 export interface PythSettleResult {
@@ -189,9 +194,7 @@ export function defaultHermesTransport(fetchImpl: typeof fetch = fetch, apiKey: 
   return {
     async fetchJson(url: string): Promise<unknown> {
       const response = await fetchImpl(url, key ? { headers: { Authorization: `Bearer ${key}` } } : undefined);
-      if (response.status === 401 || response.status === 403) {
-        throw new Error(`Hermes HTTP ${response.status}: an API key is required — set HERMES_API_KEY (get one from Pyth; a free trial exists).`);
-      }
+      if (response.status === 401 || response.status === 403) throw new HermesAuthError(response.status);
       if (!response.ok) throw new Error(`Hermes HTTP ${response.status}`);
       return response.json();
     },
@@ -284,7 +287,8 @@ export async function settlePythWindow(input: {
     let updateData: Hex[];
     try {
       updateData = await input.deps.fetchUpdateData(input.feedId, publishTime);
-    } catch {
+    } catch (error) {
+      if (error instanceof HermesAuthError) throw error;   // no key: do not burn the retry budget
       continue;
     }
     let fee: bigint;

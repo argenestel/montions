@@ -1,5 +1,5 @@
 import { Component, useEffect, useState, type ReactNode } from "react";
-import type { ChainInfo, WalletState } from "../api/types";
+import type { AccountView, ChainInfo, WalletState } from "../api/types";
 import type { Health } from "../lib/health";
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { err?: Error }> {
@@ -18,12 +18,19 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { err?: Er
   }
 }
 
-export function Banners(props: { info?: ChainInfo; wallet?: WalletState; health: Health; onSwitch: () => void; onRetry: () => void }) {
-  const { info, wallet, health } = props;
+export function Banners(props: { info?: ChainInfo; wallet?: WalletState; account?: AccountView; health: Health; onSwitch: () => void; onRetry: () => void }) {
+  const { info, wallet, health, account } = props;
+  const lowGas = !!account?.address && account.native < (info?.network === "mainnet" ? 0.5 : 0.3);
   return (
     <>
       {wallet?.wrongNetwork && (
         <div className="banner err" role="alert">Your wallet is on the wrong network (chain {wallet.chainId}). Switch to {info?.name ?? `chain ${wallet.expectedChainId}`} to trade.<button onClick={props.onSwitch}>Switch network</button></div>
+      )}
+      {lowGas && (
+        <div className="banner" role="status">You have {account!.native.toFixed(3)} MON — you need MON to pay network fees (each trade costs a fraction of a MON).
+          <button onClick={() => navigator.clipboard?.writeText(account!.address!)}>Copy my address</button>
+          {info?.network === "testnet" && <a href="https://faucet.monad.xyz" target="_blank" rel="noreferrer"><button>Get testnet MON</button></a>}
+        </div>
       )}
       {info?.paused && <div className="banner" role="status">New trading is paused. You can still cancel orders, withdraw and redeem winnings.</div>}
       {health.failing && <div className="banner err" role="alert">Can't reach the network ({health.lastError}). Showing the last data we have — retrying automatically.<button onClick={props.onRetry}>Retry now</button></div>}
@@ -49,7 +56,7 @@ export function RiskGate(props: { info?: ChainInfo; children: ReactNode }) {
           <li>Montions is <b>new, unaudited software</b>. Smart-contract bugs can lose funds. Launch limits cap total deposits.</li>
           <li>Each contract pays $1 if its condition is true at expiry and <b>$0 otherwise</b>. You can lose your entire premium.</li>
           <li>Settlement uses Pyth's signed first price at or after expiry. If no valid price arrives, the market is voided and pays 50/50.</li>
-          <li>Collateral is USDC, which its issuer can freeze. Binary options may be restricted where you live — you are responsible for complying with local law.</li>
+          <li>Collateral is {props.info?.collateralSymbol ?? "a stablecoin"}, which its issuer can freeze or restrict. Binary options may be restricted where you live — you are responsible for complying with local law.</li>
           <li>Nothing here is financial advice.</li>
         </ul>
         <label className="check"><input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} /><span>I understand these risks and that I am solely responsible for my use of this app.</span></label>

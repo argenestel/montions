@@ -88,6 +88,7 @@ export const mockApi: Api = {
   async wallet(): Promise<WalletState> { return { address: state.connected ? ("0x95B0A1c9f4d2e6B7A3c8D5e1F0a9B2c48Da8" as Hex) : undefined, chainId: 10143, expectedChainId: 10143, wrongNetwork: false }; },
   async switchNetwork() {},
   disconnect() { state.connected = false; },
+  connectOptions() { return ["dev"]; },
   onWalletChange() { return () => {}; },
   async chainInfo(): Promise<ChainInfo> {
     return {
@@ -144,7 +145,7 @@ export const mockApi: Api = {
     state.usdc = Math.max(0, state.usdc - q.cost);
     return { ok: true, filled: q.filled, cost: q.cost, hash: steps[1].hash, block: state.block };
   },
-  async connect() { state.connected = true; if (!state.usdc) state.usdc = 10000; return mockApi.account(); },
+  async connect(_k?: unknown) { state.connected = true; if (!state.usdc) state.usdc = 10000; return mockApi.account(); },
   async account(): Promise<AccountView> {
     return { address: state.connected ? ("0x95B0A1c9f4d2e6B7A3c8D5e1F0a9B2c48Da8" as Hex) : undefined, usdc: state.usdc, bookCash: state.bookCash, locked: state.locked, native: state.connected ? 4.2 : 0 };
   },

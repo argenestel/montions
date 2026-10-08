@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"; S=.dev/fork-demo; mkdir -p "$S"
 PORT="${FORK_PORT:-8552}"; RPC="http://127.0.0.1:$PORT"; SRC="${MAINNET_RPC:-https://rpc.monad.xyz}"
 USDC=0x754704Bc059F8C67012fEd69BC8A327a5aafb603
-stop() { for f in anvil keeper; do [ -f "$S/$f.pid" ] && kill "$(cat "$S/$f.pid")" 2>/dev/null; rm -f "$S/$f.pid"; done; }
+stop() { for f in anvil keeper; do { [ -f "$S/$f.pid" ] && kill "$(cat "$S/$f.pid")" 2>/dev/null || true; }; rm -f "$S/$f.pid"; done; }
 case "${1:-status}" in
 down) stop; echo "fork demo stopped"; exit 0;;
 status) for f in anvil keeper; do [ -f "$S/$f.pid" ] && kill -0 "$(cat "$S/$f.pid")" 2>/dev/null && echo "$f running" || echo "$f stopped"; done; exit 0;;
@@ -41,7 +41,7 @@ export DEPLOYMENT="$ROOT/$S/manifest.json" RPC_URL="$RPC" BOT_ADDRESS="$DEP" KEE
 ( cd bots && pnpm exec tsx src/seed-ladder.ts 2>&1 | tail -3 )
 mkdir -p app/public && cp "$S/manifest.json" app/public/deployment.json
 
-echo "▶ keeper: refresh vault quotes on the 60 most relevant markets (settlement needs a Hermes key; not required for trading)"
-( cd bots && KEEPER_MODE=pyth KEEPER_CREATE=0 KEEPER_REFRESH_LIMIT=60 KEEPER_INTERVAL_MS=20000 nohup pnpm exec tsx src/keeper.ts > "$ROOT/$S/keeper.log" 2>&1 & echo $! > "$ROOT/$S/keeper.pid" )
+echo "▶ keeper: refresh vault quotes on every market (900 per tick) (settlement needs a Hermes key; not required for trading)"
+( cd bots && KEEPER_MODE=pyth KEEPER_CREATE=0 KEEPER_REFRESH_LIMIT=900 KEEPER_INTERVAL_MS=30000 nohup pnpm exec tsx src/keeper.ts > "$ROOT/$S/keeper.log" 2>&1 & echo $! > "$ROOT/$S/keeper.pid" )
 echo; echo "✔ fork demo is up on $RPC — $(jq '.assets|length' "$S/manifest.json") assets. UI: cd app && pnpm dev  → http://127.0.0.1:5175"
 echo "  logs: $S/   stop: scripts/fork-demo.sh down"

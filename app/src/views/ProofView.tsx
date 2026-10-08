@@ -2,7 +2,7 @@ import { useApi, usePoll } from "../lib/hooks";
 
 const PARTS = [
   { n: "Orderbook", d: "Price-time CLOB, tick bitmaps, FIFO queues, atomic matching and escrow", b: "MontionsBook" },
-  { n: "Collateral", d: "Every contract is backed 1:1 — YES + NO = 1 USDC, locked in the Book", b: "MontionsBook" },
+  { n: "Collateral", d: "Every contract is backed 1:1 — YES + NO = 1 unit of collateral (USDC or AUSD), locked in the Book", b: "MontionsBook" },
   { n: "Settlement", d: "Resolver contracts decide outcomes from onchain facts only", b: "Resolvers" },
   { n: "Oracle", d: "TWAP computed from onchain pool observations — no signed feeds", b: "OracleHub + SpotPool" },
   { n: "Pricing", d: "Fair value N(d2) and realised vol computed in Solidity", b: "PricingLib + Quoter" },
@@ -29,7 +29,7 @@ export function ProofView() {
       </div>
       <div className="card"><h3>How one trade settles</h3>
         <ol className="flow">
-          <li><span><b>Sign</b> one tUSDC permit — no approval transaction.</span></li>
+          <li><span><b>Sign</b> one collateral permit (EIP-2612) — no approval transaction.</span></li>
           <li><span><b>One multicall</b>: <span className="mono">depositWithPermit + placeOrder</span>.</span></li>
           <li><span>The Book <b>matches</b> your order against resting orders by price-time priority and mints YES/NO against locked collateral.</span></li>
           <li><span>After expiry anyone calls <span className="mono">resolve</span>: the resolver reads the <b>60s TWAP</b> from the onchain pool.</span></li>

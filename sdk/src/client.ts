@@ -1,4 +1,4 @@
-import {
+import { hashDomain, parseAbi,
   createPublicClient,
   createWalletClient,
   encodeFunctionData,
@@ -665,6 +665,37 @@ export class MontionsClient {
     return this.vaultWithdraw(assets, receiver, owner);
   }
 
+  /**
+   * EIP-712 domain version differs per token (Circle USDC uses "2", Solady/OZ mocks use "1"). Resolve it from the token and VERIFY the
+   * resulting domain against the token's own DOMAIN_SEPARATOR() so a wrong guess fails loudly here instead of reverting onchain.
+   */
+  private permitDomainCache = new Map<string, { name: string; version: string }>();
+  private async resolvePermitDomain(token: Address, erc20Name: string, chainId: number): Promise<{ name: string; version: string }> {
+    const key = `${chainId}:${token.toLowerCase()}`;
+    const cached = this.permitDomainCache.get(key); if (cached) return cached;
+    const abi = parseAbi([
+      "function version() view returns (string)",
+      "function DOMAIN_SEPARATOR() view returns (bytes32)",
+      "function eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)",
+    ]);
+    // ERC-5267 tells us the exact name+version (AUSD's EIP-712 name is "Agora Dollar" while name() is "AUSD").
+    let names = [erc20Name]; let versions: string[] = [];
+    try {
+      const d = (await this.read(token, abi, "eip712Domain")) as readonly unknown[];
+      if (typeof d[1] === "string" && d[1]) names = [d[1], erc20Name];
+      if (typeof d[2] === "string" && d[2]) versions.push(d[2]);
+    } catch { /* no ERC-5267 */ }
+    try { const v = String(await this.read(token, abi, "version")); if (v) versions.push(v); } catch { /* no version() */ }
+    versions = [...versions, "2", "1"];
+    let separator: Hex | undefined;
+    try { separator = (await this.read(token, abi, "DOMAIN_SEPARATOR")) as Hex; } catch { /* cannot verify */ }
+    const resolved = separator
+      ? matchPermitDomain({ names, versions, separator, chainId, token })
+      : { name: names[0]!, version: versions[0]! };    // unverifiable: trust what the token declared, else the OZ/Solady default
+    this.permitDomainCache.set(key, resolved);
+    return resolved;
+  }
+
   async signPermit(parameters: SignPermitParameters): Promise<PermitSignature> {
     const amount = bigintValue(parameters.amount, "amount");
     const deadline = parameters.deadline === undefined
@@ -688,9 +719,10 @@ export class MontionsClient {
     const nonce = bigintValue(resultValue(metadata[1]) as Numeric, "nonce");
     const chainId = await this.publicClient.getChainId();
     if (chainId !== this.chain.id) throw new Error(`RPC chain ${chainId} does not match client chain ${this.chain.id}`);
+    const { name: domainName, version } = await this.resolvePermitDomain(token, name, chainId);
     const signature = await (wallet.signTypedData as unknown as (parameters: Record<string, unknown>) => Promise<Hex>)({
       account: signingAccount,
-      domain: { name, version: "1", chainId, verifyingContract: token },
+      domain: { name: domainName, version, chainId, verifyingContract: token },
       types: permitTypes,
       primaryType: "Permit",
       message: { owner, spender: this.addresses.book, value: amount, nonce, deadline },
@@ -764,4 +796,22 @@ export function encodeDepositWithPermit(amount: Numeric, permit: Pick<PermitSign
     functionName: "depositWithPermit",
     args: [bigintValue(amount, "amount"), permit.deadline, permit.v, permit.r, permit.s],
   });
+}
+
+
+/** Pick the EIP-712 (name, version) whose domain hash equals the token's DOMAIN_SEPARATOR(). Throws if none matches. */
+export function matchPermitDomain(p: { names: string[]; versions: string[]; separator: Hex; chainId: number; token: Address }): { name: string; version: string } {
+  const types = { EIP712Domain: [{ name: "name", type: "string" }, { name: "version", type: "string" }, { name: "chainId", type: "uint256" }, { name: "verifyingContract", type: "address" }] } as const;
+  const tried: string[] = [];
+  for (const name of new Set(p.names)) for (const version of new Set(p.versions)) {
+    tried.push(`${name}/${version}`);
+    const h = hashDomain({ domain: { name, version, chainId: BigInt(p.chainId), verifyingContract: p.token }, types });
+    if (h.toLowerCase() === p.separator.toLowerCase()) return { name, version };
+  }
+  throw new Error(`Cannot determine the EIP-2612 domain for collateral ${p.token}: none of [${tried.join(", ")}] matches its DOMAIN_SEPARATOR().`);
+}
+
+/** Back-compat helper: version only, for a known name. */
+export function matchPermitVersion(p: { candidates: string[]; separator: Hex; name: string; chainId: number; token: Address }): string {
+  return matchPermitDomain({ names: [p.name], versions: p.candidates, separator: p.separator, chainId: p.chainId, token: p.token }).version;
 }

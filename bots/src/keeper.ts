@@ -23,6 +23,7 @@ import {
   pythFeedIdForSymbol,
   pythOracleAbi,
   pythSettlementAbi,
+  HermesAuthError,
   settlePythWindow,
   MONAD_PYTH_CORE,
   type PythSettleDeps,
@@ -366,14 +367,23 @@ async function settleAndResolve(
 
   let resolved = 0;
   for (const group of groups.values()) {
+    if (hermesDisabled) break;
     const feedId = await feedIdFor(clients, group.symbol, group.assetId);
-    const result = await settlePythWindow({
+    let result: Awaited<ReturnType<typeof settlePythWindow>>;
+    try { result = await settlePythWindow({
       assetId: group.assetId,
       expiry: group.expiry,
       feedId,
       nowSeconds: now,
       deps,
-    });
+    }); } catch (error) {
+      if (error instanceof HermesAuthError) {
+        hermesDisabled = true;
+        logLine("keeper", { event: "pyth_settlement_disabled", reason: error.message, effect: "expired markets will void 50/50 after the grace period unless someone else settles them" });
+        break;
+      }
+      throw error;
+    }
     logLine("keeper", {
       event: "pyth_settle",
       asset: group.symbol,
@@ -388,6 +398,9 @@ async function settleAndResolve(
   }
   return resolved;
 }
+
+/** Set once Hermes rejects our credentials; the keeper keeps quoting but stops hammering Hermes. */
+let hermesDisabled = false;
 
 async function refreshVault(
   clients: KeeperClients,
