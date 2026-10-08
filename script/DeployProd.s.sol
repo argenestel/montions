@@ -30,6 +30,8 @@ contract DeployProd is Script {
     bytes32 internal constant FEED_ETH_USD = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
     uint256 internal constant MONAD_MAINNET = 143;
 
+    string[] internal symbols;
+
     struct Out {
         MontionsBook book; Quoter quoter; PythOracle oracle; PythSettlementResolver resolver; TimelockOpResolver timelock; MakerVault vault;
         address usdc; address pyth; address owner;
@@ -65,14 +67,24 @@ contract DeployProd is Script {
         o.owner = msg.sender;
         o.book = new MontionsBook(usdc, msg.sender);
         o.oracle = new PythOracle(pyth, msg.sender);
-        // maxAge: Pyth's pushed feeds refresh roughly every 30-70s on Monad (measured 2026-10-07: BTC/ETH ~65s, MON ~35s), so 180s
-        // (~3 heartbeats) avoids false "unhealthy" flaps. It only affects quoting/display; settlement uses fresh signed data at expiry.
-        uint32 maxAge = uint32(vm.envOr("PYTH_MAX_AGE", uint256(180)));
-        o.oracle.setFeed(keccak256("MON"), FEED_MON_USD, 1.2e18, maxAge);
-        o.oracle.setFeed(keccak256("BTC"), FEED_BTC_USD, 0.6e18, maxAge);
-        o.oracle.setFeed(keccak256("ETH"), FEED_ETH_USD, 0.8e18, maxAge);
+        // maxAge: the sponsored push feeds on Monad have a 1h heartbeat and 0.02-0.05% deviation trigger, so a pushed price is never
+        // more than ~0.05% off, but can be up to an hour old when the market is quiet. 3900s (heartbeat + 5 min) avoids false "unhealthy".
+        // It only affects quoting/display; settlement uses fresh signed data at expiry.
+        uint32 maxAge = uint32(vm.envOr("PYTH_MAX_AGE", uint256(3900)));
+        string memory cfg = vm.readFile(string.concat(vm.projectRoot(), "/config/pyth-feeds.json"));
+        uint256 registered;
+        for (uint256 i; vm.keyExistsJson(cfg, string.concat(".feeds[", vm.toString(i), "].symbol")); ++i) {
+            string memory k = string.concat(".feeds[", vm.toString(i), "]");
+            if (!vm.parseJsonBool(cfg, string.concat(k, ".enabled"))) continue;
+            string memory sym = vm.parseJsonString(cfg, string.concat(k, ".symbol"));
+            bytes32 id = keccak256(bytes(sym));
+            o.oracle.setFeed(id, vm.parseJsonBytes32(cfg, string.concat(k, ".feedId")), vm.parseJsonUint(cfg, string.concat(k, ".volWad")), maxAge);
+            symbols.push(sym); ++registered;
+        }
+        require(registered > 0, "no enabled feeds in config/pyth-feeds.json");
+        console2.log("registered feeds", registered);
         o.resolver = new PythSettlementResolver(pyth, address(o.oracle), msg.sender);
-        o.resolver.setSymbol(keccak256("MON"), "MON"); o.resolver.setSymbol(keccak256("BTC"), "BTC"); o.resolver.setSymbol(keccak256("ETH"), "ETH");
+        for (uint256 i; i < symbols.length; ++i) o.resolver.setSymbol(keccak256(bytes(symbols[i])), symbols[i]);
         o.timelock = new TimelockOpResolver(msg.sender);
         o.book.setResolverAllowed(address(o.resolver), true);
         o.book.setResolverAllowed(address(o.timelock), true);

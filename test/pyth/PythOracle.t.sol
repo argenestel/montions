@@ -28,7 +28,7 @@ contract PythOracleTest is PythTestBase {
         bytes32 assetZero = keccak256("expo-zero");
         bytes32 feedZero = bytes32(uint256(0x103));
         pyth.setPrice(feedZero, 4, 0, 0, block.timestamp);
-        oracle.setFeed(assetZero, feedZero, 5e18, 3600);
+        oracle.setFeed(assetZero, feedZero, 5e18, 7200);
         (uint256 unitPrice,) = oracle.latestPrice(assetZero);
         assertEq(unitPrice, 4e18);
     }
@@ -69,8 +69,8 @@ contract PythOracleTest is PythTestBase {
         oracle.setFeed(asset, feed, 5e18 + 1, 60);
         vm.expectRevert(abi.encodeWithSelector(PythOracle.InvalidMaxAge.selector, uint32(9)));
         oracle.setFeed(asset, feed, 1e18, 9);
-        vm.expectRevert(abi.encodeWithSelector(PythOracle.InvalidMaxAge.selector, uint32(3601)));
-        oracle.setFeed(asset, feed, 1e18, 3601);
+        vm.expectRevert(abi.encodeWithSelector(PythOracle.InvalidMaxAge.selector, uint32(7201)));
+        oracle.setFeed(asset, feed, 1e18, 7201);
         vm.expectRevert(abi.encodeWithSelector(PythOracle.UnknownFeed.selector, bytes32(uint256(0x302))));
         oracle.setFeed(asset, bytes32(uint256(0x302)), 1e18, 60);
 

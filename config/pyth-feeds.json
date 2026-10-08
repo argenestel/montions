@@ -1,0 +1,1077 @@
+{
+  "chainId": 143,
+  "pyth": "0x2880aB155794e7179c9eE2e38200202908C17B43",
+  "source": "monad-crypto/protocols mainnet/pyth.jsonc",
+  "verifiedAt": 1791467008,
+  "maxAgeSec": 3900,
+  "feeds": [
+    {
+      "symbol": "BTC",
+      "pair": "BTC/USD",
+      "feedId": "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 550000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 82050.86743668,
+        "conf_bps": 3.9,
+        "expo": -8,
+        "ageSec": 10
+      },
+      "vol": 0.55
+    },
+    {
+      "symbol": "ETH",
+      "pair": "ETH/USD",
+      "feedId": "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 700000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 2516.57414839,
+        "conf_bps": 6.4,
+        "expo": -8,
+        "ageSec": 3
+      },
+      "vol": 0.7
+    },
+    {
+      "symbol": "MON",
+      "pair": "MON/USD",
+      "feedId": "0x31491744e2dbf6df7fcf4ac0820d18a609b49076d45066d3568424e62f686cd1",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 1200000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.024742550000000002,
+        "conf_bps": 4.0,
+        "expo": -8,
+        "ageSec": 6
+      },
+      "vol": 1.2
+    },
+    {
+      "symbol": "SOL",
+      "pair": "SOL/USD",
+      "feedId": "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 900000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 111.45761132,
+        "conf_bps": 3.4,
+        "expo": -8,
+        "ageSec": 9
+      },
+      "vol": 0.9
+    },
+    {
+      "symbol": "AAVE",
+      "pair": "AAVE/USD",
+      "feedId": "0x2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1000000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 168.63135977000002,
+        "conf_bps": 5.6,
+        "expo": -8,
+        "ageSec": 3
+      },
+      "vol": 1.0
+    },
+    {
+      "symbol": "ADA",
+      "pair": "ADA/USD",
+      "feedId": "0x2a01deaec9e51a579277b34b122399984d0bbf57e2458a7e42fecd2829867a0d",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 1000000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.24628806,
+        "conf_bps": 4.0,
+        "expo": -8,
+        "ageSec": 6
+      },
+      "vol": 1.0
+    },
+    {
+      "symbol": "APT",
+      "pair": "APT/USD",
+      "feedId": "0x03ae4db29ed4ae33d323568895aa00337e658e348b37509f5372ae51f0af00d5",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1100000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.78319751,
+        "conf_bps": 5.1,
+        "expo": -8,
+        "ageSec": 9
+      },
+      "vol": 1.1
+    },
+    {
+      "symbol": "ARB",
+      "pair": "ARB/USD",
+      "feedId": "0x3fa4252848f9f0a1480be62745a4629d9eb1322aebab8a791e344b3b9c1adcf5",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1100000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.18211679,
+        "conf_bps": 4.8,
+        "expo": -8,
+        "ageSec": 2
+      },
+      "vol": 1.1
+    },
+    {
+      "symbol": "AUSD",
+      "pair": "AUSD/USD",
+      "feedId": "0xd9912df360b5b7f21a122f15bdd5e27f62ce5e72bd316c291f7c86620e07fb2a",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 0.99968316,
+        "conf_bps": 2.9,
+        "expo": -8,
+        "ageSec": 6
+      }
+    },
+    {
+      "symbol": "AVAX",
+      "pair": "AVAX/USD",
+      "feedId": "0x93da3352f9f1d105fdfe4971cfa80e9dd777bfc5d0f683ebb6e1294b92137bb7",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 1000000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 10.51920522,
+        "conf_bps": 3.8,
+        "expo": -8,
+        "ageSec": 10
+      },
+      "vol": 1.0
+    },
+    {
+      "symbol": "AXL",
+      "pair": "AXL/USD",
+      "feedId": "0x60144b1d5c9e9851732ad1d9760e3485ef80be39b984f6bf60f82b28a2b7f126",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1200000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.05131379,
+        "conf_bps": 8.2,
+        "expo": -8,
+        "ageSec": 4
+      },
+      "vol": 1.2
+    },
+    {
+      "symbol": "BERA",
+      "pair": "BERA/USD",
+      "feedId": "0x962088abcfdbdb6e30db2e340c8cf887d9efb311b1f2f17b155a63dbb6d40265",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1400000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.21723,
+        "conf_bps": 6.3,
+        "expo": -8,
+        "ageSec": 7
+      },
+      "vol": 1.4
+    },
+    {
+      "symbol": "BNB",
+      "pair": "BNB/USD",
+      "feedId": "0x2f95862b045670cd22bee3114c39763a4a08beeb663b145d283c31d7d1101c4f",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 600000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 756.08472184,
+        "conf_bps": 4.4,
+        "expo": -8,
+        "ageSec": 10
+      },
+      "vol": 0.6
+    },
+    {
+      "symbol": "CAKE",
+      "pair": "CAKE/USD",
+      "feedId": "0x2356af9529a1064d41e32d617e2ce1dca5733afa901daba9e2b68dee5d53ecf9",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1100000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 2.2179295900000002,
+        "conf_bps": 2.3,
+        "expo": -8,
+        "ageSec": 2
+      },
+      "vol": 1.1
+    },
+    {
+      "symbol": "CBBTC",
+      "pair": "CBBTC/USD",
+      "feedId": "0x2817d7bfe5c64b8ea956e9a26f573ef64e72e4d7891f2d6af9bcc93f7aff9a97",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 550000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 82028.45601092,
+        "conf_bps": 18.7,
+        "expo": -8,
+        "ageSec": 5
+      },
+      "vol": 0.55
+    },
+    {
+      "symbol": "DAI",
+      "pair": "DAI/USD",
+      "feedId": "0xb0948a5e5313200c632b51bb5ca32f6de0d36e9950a942d19751e833f70dabfd",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 0.999795,
+        "conf_bps": 2.4,
+        "expo": -8,
+        "ageSec": 10
+      }
+    },
+    {
+      "symbol": "DOGE",
+      "pair": "DOGE/USD",
+      "feedId": "0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 1100000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.08633415,
+        "conf_bps": 3.1,
+        "expo": -8,
+        "ageSec": 3
+      },
+      "vol": 1.1
+    },
+    {
+      "symbol": "EBTC",
+      "pair": "EBTC/USD",
+      "feedId": "0xbe3dd0cf4a168f82e4912952b24420211ad52641b7365d49866d59e20c948288",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 550000000000000000,
+      "enabled": false,
+      "live": {
+        "exists": true,
+        "price": 77941.37123357,
+        "conf_bps": 58.3,
+        "expo": -8,
+        "ageSec": 3705961
+      },
+      "reason": "STALE: last update 42d ago (heartbeat is 3600s) \u2014 nobody is pushing this feed",
+      "vol": 0.55
+    },
+    {
+      "symbol": "ETHX",
+      "pair": "ETHX/ETH_RR",
+      "feedId": "0x1b8eb073e2a900cdf1f6ee37ddab4869a4400499ec6e52f3e268a93f46c55429",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.09585796,
+        "conf_bps": 0.0,
+        "expo": -8,
+        "ageSec": 3705964
+      }
+    },
+    {
+      "symbol": "EZETH",
+      "pair": "EZETH/USD",
+      "feedId": "0x06c217a791f5c4f988b36629af4cb88fad827b2485400a358f3b02886b54de92",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 720000000000000000,
+      "enabled": false,
+      "live": {
+        "exists": true,
+        "price": 2645.29176747,
+        "conf_bps": 37.3,
+        "expo": -8,
+        "ageSec": 3705967
+      },
+      "reason": "STALE: last update 42d ago (heartbeat is 3600s) \u2014 nobody is pushing this feed",
+      "vol": 0.72
+    },
+    {
+      "symbol": "FDUSD",
+      "pair": "FDUSD/USD",
+      "feedId": "0xccdc1a08923e2e4f4b1e6ea89de6acbc5fe1948e9706f5604b8cb50bc1ed3979",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 0.99714651,
+        "conf_bps": 2.4,
+        "expo": -8,
+        "ageSec": 15
+      }
+    },
+    {
+      "symbol": "HYPE",
+      "pair": "HYPE/USD",
+      "feedId": "0x4279e31cc369bbcc2faf022b382b080e32a8e689ff20fbc530d2a603eb6cd98b",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 1300000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 85.05146635,
+        "conf_bps": 7.6,
+        "expo": -8,
+        "ageSec": 19
+      },
+      "vol": 1.3
+    },
+    {
+      "symbol": "LBTC",
+      "pair": "LBTC/USD",
+      "feedId": "0x8f257aab6e7698bb92b15511915e593d6f8eae914452f781874754b03d0c612b",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 550000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 82302.19913105,
+        "conf_bps": 17.6,
+        "expo": -8,
+        "ageSec": 22
+      },
+      "vol": 0.55
+    },
+    {
+      "symbol": "LINK",
+      "pair": "LINK/USD",
+      "feedId": "0x8ac0c70fff57e9aefdf5edf44b51d62c2d433653cbb2cf5cc06bb115af04d221",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 900000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 12.85191868,
+        "conf_bps": 7.1,
+        "expo": -8,
+        "ageSec": 25
+      },
+      "vol": 0.9
+    },
+    {
+      "symbol": "OP",
+      "pair": "OP/USD",
+      "feedId": "0x385f64d993f7b77d8182ed5003d97c60aa3361f3cecfe711544d2d59165e9bdf",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1100000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.12195,
+        "conf_bps": 4.6,
+        "expo": -8,
+        "ageSec": 29
+      },
+      "vol": 1.1
+    },
+    {
+      "symbol": "POL",
+      "pair": "POL/USD",
+      "feedId": "0xffd11c5a1cfd42f80afb2df4d9f264c15f956d68153335374ec10722edd70472",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1100000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.10007540000000001,
+        "conf_bps": 7.5,
+        "expo": -8,
+        "ageSec": 1
+      },
+      "vol": 1.1
+    },
+    {
+      "symbol": "PYTH",
+      "pair": "PYTH/USD",
+      "feedId": "0x0bbf28e9a841a1cc788f6a361b17ca072d0ea3098a1e5df1c3922d06719579ff",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1300000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.0751131,
+        "conf_bps": 8.3,
+        "expo": -8,
+        "ageSec": 4
+      },
+      "vol": 1.3
+    },
+    {
+      "symbol": "PYUSD",
+      "pair": "PYUSD/USD",
+      "feedId": "0xc1da1b73d7f01e7ddd54b3766cf7fcd644395ad14f70aa706ec5384c59e76692",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 0.99968738,
+        "conf_bps": 5.1,
+        "expo": -8,
+        "ageSec": 7
+      }
+    },
+    {
+      "symbol": "RED",
+      "pair": "RED/USD",
+      "feedId": "0x0bb28b82f08477fadbf9607fc8408ff61ca129fae40adc7a8d2ab8945f97ee74",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1400000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.14861981,
+        "conf_bps": 5.1,
+        "expo": -8,
+        "ageSec": 10
+      },
+      "vol": 1.4
+    },
+    {
+      "symbol": "RSETH",
+      "pair": "RSETH/ETH_RR",
+      "feedId": "0x56e9b5eb08e62dd4b445f29e4ec7d3b3d49617d64f2d331d36a2101d4904e3c4",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.0786841600000001,
+        "conf_bps": 0.0,
+        "expo": -8,
+        "ageSec": 3706000
+      }
+    },
+    {
+      "symbol": "RSETH",
+      "pair": "RSETH/USD",
+      "feedId": "0x0caec284d34d836ca325cf7b3256c078c597bc052fbd3c0283d52b581d68d71f",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 720000000000000000,
+      "enabled": false,
+      "live": {
+        "exists": true,
+        "price": 2752.86655686,
+        "conf_bps": 287.9,
+        "expo": -8,
+        "ageSec": 7
+      },
+      "reason": "confidence interval wider than 2% of price",
+      "vol": 0.72
+    },
+    {
+      "symbol": "S",
+      "pair": "S/USD",
+      "feedId": "0xf490b178d0c85683b7a0f2388b40af2e6f7c90cbe0f96b31f315f08d0e5a2d6d",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1200000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.03924005,
+        "conf_bps": 7.1,
+        "expo": -8,
+        "ageSec": 10
+      },
+      "vol": 1.2
+    },
+    {
+      "symbol": "SEI",
+      "pair": "SEI/USD",
+      "feedId": "0x53614f1cb0c031d4af66c04cb9c756234adad0e1cee85303795091499a4084eb",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1300000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.0681869,
+        "conf_bps": 4.9,
+        "expo": -8,
+        "ageSec": 3
+      },
+      "vol": 1.3
+    },
+    {
+      "symbol": "SMON",
+      "pair": "SMON/MON_RR",
+      "feedId": "0x7fbf66b9b4e8b0e5723fc7001b00848c7d25225982ab33f6a5d111fdbf528001",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.1012209,
+        "conf_bps": 96.6,
+        "expo": -8,
+        "ageSec": 3706012
+      }
+    },
+    {
+      "symbol": "SOLVBTC",
+      "pair": "SOLVBTC/USD",
+      "feedId": "0xf253cf87dc7d5ed5aa14cba5a6e79aee8bcfaef885a0e1b807035a0bbecc36fa",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 550000000000000000,
+      "enabled": false,
+      "live": {
+        "exists": true,
+        "price": 77964.5273025303,
+        "conf_bps": 24.1,
+        "expo": -10,
+        "ageSec": 3706016
+      },
+      "reason": "STALE: last update 42d ago (heartbeat is 3600s) \u2014 nobody is pushing this feed",
+      "vol": 0.55
+    },
+    {
+      "symbol": "STETH",
+      "pair": "STETH/ETH_RR",
+      "feedId": "0xcf40822c7635ddbde64c831982c65b3b37247f139e8e53078d1602e886badd2f",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.0,
+        "conf_bps": 0.0,
+        "expo": -8,
+        "ageSec": 2
+      }
+    },
+    {
+      "symbol": "STG",
+      "pair": "STG/USD",
+      "feedId": "0x008546b175392b878c5c7ff0b6327b1cb12669be012fc2935c09a16fc8f6c58f",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1200000000000000000,
+      "enabled": false,
+      "live": {
+        "exists": true,
+        "price": 0.16908543,
+        "conf_bps": 14.8,
+        "expo": -8,
+        "ageSec": 3706022
+      },
+      "reason": "STALE: last update 42d ago (heartbeat is 3600s) \u2014 nobody is pushing this feed",
+      "vol": 1.2
+    },
+    {
+      "symbol": "STONE",
+      "pair": "STONE/ETH_RR",
+      "feedId": "0x7a508a94c9276cbc60d04e1a8cf839d20d835bb869a74487dfffa8f1bfd1ce42",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.07108633,
+        "conf_bps": 0.0,
+        "expo": -8,
+        "ageSec": 3706023
+      }
+    },
+    {
+      "symbol": "SUI",
+      "pair": "SUI/USD",
+      "feedId": "0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 1200000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 1.08463481,
+        "conf_bps": 2.6,
+        "expo": -8,
+        "ageSec": 7
+      },
+      "vol": 1.2
+    },
+    {
+      "symbol": "SUSDE",
+      "pair": "SUSDE/USD",
+      "feedId": "0xca3ba9a619a4b3755c10ac7d5e760275aa95e9823d38a84fedd416856cdba37c",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 1.2510206,
+        "conf_bps": 3.2,
+        "expo": -8,
+        "ageSec": 9
+      }
+    },
+    {
+      "symbol": "SUSDE",
+      "pair": "SUSDE/USDE_RR",
+      "feedId": "0x271c64ce459937abf721d42552035713b6c58f80eeceab716a624607fda4b10f",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.25202876,
+        "conf_bps": 0.0,
+        "expo": -8,
+        "ageSec": 10
+      }
+    },
+    {
+      "symbol": "SUSDS",
+      "pair": "SUSDS/USDS_RR",
+      "feedId": "0x6968a8641208463d17ae3b9cfa0e4841a7aa7a5d54122b9f692b84fe9ce3409f",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.11210471,
+        "conf_bps": 0.0,
+        "expo": -8,
+        "ageSec": 2
+      }
+    },
+    {
+      "symbol": "TIA",
+      "pair": "TIA/USD",
+      "feedId": "0x09f7c1d7dfbb7df2b8fe3d3d87ee94a2259d212da4f30c1f0540d066dfa44723",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1200000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.48534204000000003,
+        "conf_bps": 4.3,
+        "expo": -8,
+        "ageSec": 3
+      },
+      "vol": 1.2
+    },
+    {
+      "symbol": "UNI",
+      "pair": "UNI/USD",
+      "feedId": "0x78d185a741d07edb3412b09008b7c5cfb9bbbd7d568bf00ba737b456ba171501",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1000000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 7.56598164,
+        "conf_bps": 4.5,
+        "expo": -8,
+        "ageSec": 5
+      },
+      "vol": 1.0
+    },
+    {
+      "symbol": "USDC",
+      "pair": "USDC/USD",
+      "feedId": "0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 0.99982379,
+        "conf_bps": 5.8,
+        "expo": -8,
+        "ageSec": 6
+      }
+    },
+    {
+      "symbol": "USDE",
+      "pair": "USDE/USD",
+      "feedId": "0x6ec879b1e9963de5ee97e9c8710b742d6228252a5e2ca12d4ae81d7fe5ee8c5d",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 0.99965481,
+        "conf_bps": 5.0,
+        "expo": -8,
+        "ageSec": 7
+      }
+    },
+    {
+      "symbol": "USDS",
+      "pair": "USDS/USD",
+      "feedId": "0x77f0971af11cc8bac224917275c1bf55f2319ed5c654a1ca955c82fa2d297ea1",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 0.9997947500000001,
+        "conf_bps": 8.0,
+        "expo": -8,
+        "ageSec": 9
+      }
+    },
+    {
+      "symbol": "USDT",
+      "pair": "USDT/USD",
+      "feedId": "0x2b89b9dc8fdf9f34709a5b106b472f0f39bb6ca9ce04b0fd7f2e971688e2e53b",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 0.99931143,
+        "conf_bps": 1.4,
+        "expo": -8,
+        "ageSec": 10
+      }
+    },
+    {
+      "symbol": "USDY",
+      "pair": "USDY/USD",
+      "feedId": "0xe393449f6aff8a4b6d3e1165a7c9ebec103685f3b41e60db4277b5b6d10e7326",
+      "heartbeatSec": 3600,
+      "category": "stablecoin",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "stablecoin: depeg markets need a different volatility model than the fixed-vol digital pricer",
+      "live": {
+        "exists": true,
+        "price": 1.14865,
+        "conf_bps": 8.2,
+        "expo": -8,
+        "ageSec": 1
+      }
+    },
+    {
+      "symbol": "W",
+      "pair": "W/USD",
+      "feedId": "0xeff7446475e218517566ea99e72a4abec2e1bd8498b43b7d8331e29dcb059389",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1300000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 0.01613747,
+        "conf_bps": 5.7,
+        "expo": -8,
+        "ageSec": 2
+      },
+      "vol": 1.3
+    },
+    {
+      "symbol": "WBTC",
+      "pair": "WBTC/USD",
+      "feedId": "0xc9d8b075a5c69303365ae23633d4e085199bf5c520a3b90fed1322a0342ffc33",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 550000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 81767.40000000001,
+        "conf_bps": 3.9,
+        "expo": -8,
+        "ageSec": 4
+      },
+      "vol": 0.55
+    },
+    {
+      "symbol": "WEETH",
+      "pair": "WEETH/EETH_RR",
+      "feedId": "0x343558e79f587e098c321218ecb34d031ba709ab3e84133126f3c98511b91f64",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.10532531,
+        "conf_bps": 0.0,
+        "expo": -8,
+        "ageSec": 5
+      }
+    },
+    {
+      "symbol": "WEETH",
+      "pair": "WEETH/USD",
+      "feedId": "0x9ee4e7c60b940440a261eb54b6d8149c23b580ed7da3139f7f08f4ea29dad395",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 720000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 2775.20510861,
+        "conf_bps": 78.9,
+        "expo": -8,
+        "ageSec": 6
+      },
+      "vol": 0.72
+    },
+    {
+      "symbol": "WETH",
+      "pair": "WETH/USD",
+      "feedId": "0x9d4294bbcd1174d6f2003ec365831e64cc31d9f6f15a2b85399db8d5000960f6",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 700000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 2509.87630299,
+        "conf_bps": 36.8,
+        "expo": -8,
+        "ageSec": 8
+      },
+      "vol": 0.7
+    },
+    {
+      "symbol": "WSTETH",
+      "pair": "WSTETH/STETH_RR",
+      "feedId": "0xf59ead01ed0faba85332a1e2feae8ddb14a1c94ebac259f1c982c92fc7ce333e",
+      "heartbeatSec": 3600,
+      "category": "exchange-rate",
+      "tier": "n/a",
+      "enabled": false,
+      "reason": "ratio feed (not a USD price); different semantics",
+      "live": {
+        "exists": true,
+        "price": 1.24586171,
+        "conf_bps": 0.0,
+        "expo": -8,
+        "ageSec": 9
+      }
+    },
+    {
+      "symbol": "WSTETH",
+      "pair": "WSTETH/USD",
+      "feedId": "0x6df640f3b8963d8f8358f791f352b8364513f6ab1cca5ed3f1f7b5448980e784",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "wrapped",
+      "volWad": 700000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 3122.2788360600002,
+        "conf_bps": 2.5,
+        "expo": -8,
+        "ageSec": 1
+      },
+      "vol": 0.7
+    },
+    {
+      "symbol": "XAG",
+      "pair": "XAG/USD",
+      "feedId": "0xf2fb02c32b055c805e7238d628e5e9dadef274376114eb1f012337cabe93871e",
+      "heartbeatSec": 3600,
+      "category": "metal",
+      "tier": "session",
+      "volWad": 350000000000000000,
+      "enabled": false,
+      "reason": "market-hours feed: an expiry inside a closure cannot settle (first price after expiry may be past the 300s window) and would void; needs session-aware expiries",
+      "live": {
+        "exists": true,
+        "price": 59.206500000000005,
+        "conf_bps": 1.6,
+        "expo": -5,
+        "ageSec": 3
+      },
+      "vol": 0.35
+    },
+    {
+      "symbol": "XAU",
+      "pair": "XAU/USD",
+      "feedId": "0x765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2",
+      "heartbeatSec": 3600,
+      "category": "metal",
+      "tier": "session",
+      "volWad": 180000000000000000,
+      "enabled": false,
+      "reason": "market-hours feed: an expiry inside a closure cannot settle (first price after expiry may be past the 300s window) and would void; needs session-aware expiries",
+      "live": {
+        "exists": true,
+        "price": 4124.325,
+        "conf_bps": 0.4,
+        "expo": -3,
+        "ageSec": 5
+      },
+      "vol": 0.18
+    },
+    {
+      "symbol": "XRP",
+      "pair": "XRP/USD",
+      "feedId": "0xec5d399846a9209f3fe5881d70aae9268c94339ff9817e8d18ff19fa05eea1c8",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "major",
+      "volWad": 900000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 1.38722132,
+        "conf_bps": 6.0,
+        "expo": -8,
+        "ageSec": 6
+      },
+      "vol": 0.9
+    },
+    {
+      "symbol": "ZRO",
+      "pair": "ZRO/USD",
+      "feedId": "0x3bd860bea28bf982fa06bcf358118064bb114086cc03993bd76197eaab0b8018",
+      "heartbeatSec": 3600,
+      "category": "crypto",
+      "tier": "alt",
+      "volWad": 1300000000000000000,
+      "enabled": true,
+      "live": {
+        "exists": true,
+        "price": 2.00312192,
+        "conf_bps": 5.9,
+        "expo": -8,
+        "ageSec": 8
+      },
+      "vol": 1.3
+    }
+  ]
+}

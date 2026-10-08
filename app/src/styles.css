@@ -331,3 +331,8 @@ main { max-width: 1240px; margin: 0 auto; padding: clamp(18px, 4vw, 44px) clamp(
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
 }
+
+/* asset picker */
+.search { width: 100%; margin: 0 0 8px; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.05); color: var(--text); outline: 0; }
+.search:focus { border-color: var(--violet); }
+.grp { padding: 10px 12px 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 600; }

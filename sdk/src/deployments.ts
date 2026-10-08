@@ -16,6 +16,8 @@ export interface DeploymentAsset {
   name?: string;
   /** True when the underlying is a MOCK/demo market and the UI must say so. */
   mock?: boolean;
+  /** Ladder depth profile: "major" | "alt" | "wrapped". */
+  tier?: string;
 }
 
 /** The JSON shape emitted by script/Deploy.s.sol. */
@@ -105,6 +107,7 @@ export function parseDeployment(value: unknown): Deployment {
       ...(asset.feedId ? { feedId: bytes32(asset.feedId, `assets[${index}].feedId`) } : {}),
       ...(typeof asset.name === "string" ? { name: asset.name } : {}),
       ...(typeof asset.mock === "boolean" ? { mock: asset.mock } : {}),
+      ...(typeof asset.tier === "string" ? { tier: asset.tier } : {}),
     };
   });
 

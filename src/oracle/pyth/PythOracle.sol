@@ -44,11 +44,11 @@ contract PythOracle is IPriceOracle, Ownable {
     }
 
     /// @notice Configure the Pyth feed and static annualised volatility for an asset.
-    /// @dev `volWad` must be 20%-500%; `maxAge` must be 10-3600 seconds.
+    /// @dev `volWad` must be 20%-500%; `maxAge` must be 10-7200 seconds (pushed feeds have a 1h heartbeat, so ~3900 is typical).
     function setFeed(bytes32 assetId, bytes32 feedId, uint256 volWad, uint32 maxAge) external onlyOwner {
         if (feedId == bytes32(0)) revert ZeroFeedId();
         if (volWad < 0.2e18 || volWad > 5e18) revert InvalidVolatility(volWad);
-        if (maxAge < 10 || maxAge > 3600) revert InvalidMaxAge(maxAge);
+        if (maxAge < 10 || maxAge > 7200) revert InvalidMaxAge(maxAge);
         if (!pyth.priceFeedExists(feedId)) revert UnknownFeed(feedId);
         feedConfig[assetId] = FeedConfig({feedId: feedId, volWad: volWad, maxAge: maxAge});
         emit FeedSet(assetId, feedId, volWad, maxAge);

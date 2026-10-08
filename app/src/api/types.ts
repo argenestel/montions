@@ -7,6 +7,7 @@ export interface Asset {
   spot: number;
   vol: number;          // annualised, 1 = 100%
   mock: boolean;        // true => demo token / demo pool
+  tier?: string;        // major | alt | wrapped (ladder depth)
 }
 
 export interface SeriesView {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { Address, Hex } from "viem";
 
 /**
@@ -178,7 +179,12 @@ export async function hermesFetchUpdateData(
  * Hermes (Pyth Core) requires an API key as of the August 2026 upgrade: send it as `Authorization: Bearer <key>`.
  * The key is read from HERMES_API_KEY (never logged). Without it the public endpoint answers 401.
  */
-export function defaultHermesTransport(fetchImpl: typeof fetch = fetch, apiKey: string | undefined = process.env.HERMES_API_KEY): HermesTransport {
+function readKeyFile(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  try { return readFileSync(path, "utf8").trim() || undefined; } catch { return undefined; }
+}
+
+export function defaultHermesTransport(fetchImpl: typeof fetch = fetch, apiKey: string | undefined = process.env.HERMES_API_KEY ?? readKeyFile(process.env.HERMES_API_KEY_FILE ?? ".dev/hermes.key")): HermesTransport {
   const key = apiKey?.trim();
   return {
     async fetchJson(url: string): Promise<unknown> {

@@ -196,6 +196,7 @@ async function createLadder(clients: KeeperClients, config: KeeperConfig, now: b
     assets.push({
       symbol: asset.symbol,
       assetId: asset.assetId,
+      ...(asset.tier === "major" || asset.tier === "alt" || asset.tier === "wrapped" ? { tier: asset.tier } : {}),
       spotWad: await readSpot(clients, config, asset),
     });
   }

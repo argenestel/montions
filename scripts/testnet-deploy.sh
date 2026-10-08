@@ -15,9 +15,14 @@ SIGN=(--keystore "$KS" --password-file "$PASS")
 send() { cast send "$@" "${SIGN[@]}" --rpc-url "$RPC" >/dev/null; }
 export DEPLOY_VAULT=1 DEPLOYER_ADDRESS="$ADDR" BOT_ADDRESS="$ADDR" RPC_URL="$RPC"
 
-echo "▶ deploy (contracts + seeded demo pools + vault)"
-forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC" "${SIGN[@]}" --sender "$ADDR" --broadcast --slow --disable-code-size-limit > .dev/testnet-deploy.log 2>&1 || { tail -25 .dev/testnet-deploy.log; exit 1; }
-M=deployments/10143.json; J() { jq -r ".contracts.$1" "$M"; }
+M=deployments/10143.json
+if [ -f "$M" ] && [ "$(cast code "$(jq -r .contracts.book "$M")" --rpc-url "$RPC" | wc -c)" -gt 4 ]; then
+  echo "▶ RESUMING: contracts from $M are already on-chain — skipping deploy"
+else
+  echo "▶ deploy (contracts + seeded demo pools + vault)"
+  forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC" "${SIGN[@]}" --sender "$ADDR" --broadcast --slow --disable-code-size-limit > .dev/testnet-deploy.log 2>&1 || { tail -25 .dev/testnet-deploy.log; exit 1; }
+fi
+J() { jq -r ".contracts.$1" "$M"; }
 BOOK=$(J book); VAULT=$(J vault); USDC=$(J collateral)
 
 echo "▶ configure: vault trusts the TWAP resolver; launch caps (generous but finite on testnet)"
@@ -25,13 +30,13 @@ send "$VAULT" "setTrustedResolver(address)" "$(J twapResolver)"; send "$VAULT" "
 send "$BOOK" "setCollateralCap(uint256)" 5000000000000; send "$BOOK" "setSeriesPoolCap(uint256)" 200000000000; send "$VAULT" "setMaxTotalAssets(uint256)" 2000000000000
 
 echo "▶ seed maker markets, then the canonical series ladder"
-forge script script/Seed.s.sol:Seed --rpc-url "$RPC" "${SIGN[@]}" --sender "$ADDR" --broadcast --slow --disable-code-size-limit >> .dev/testnet-deploy.log 2>&1
+forge script script/Seed.s.sol:Seed --rpc-url "$RPC" "${SIGN[@]}" --sender "$ADDR" --broadcast --slow --disable-code-size-limit --gas-estimate-multiplier 110 >> .dev/testnet-deploy.log 2>&1
 ( cd bots && [ -d node_modules ] || pnpm install >/dev/null; cd ../sdk && [ -d node_modules ] || pnpm install >/dev/null )
 KEY="$(cast wallet private-key --keystore "$KS" --password-file "$PASS")"
 ( cd bots && DEPLOYMENT="$ROOT/$M" BOT_PRIVATE_KEY="$KEY" pnpm exec tsx src/seed-ladder.ts )
 
 echo "▶ fund the maker vault with 200k test USDC"
-send "$USDC" "mint(address,uint256)" "$ADDR" 250000000000; send "$USDC" "approve(address,uint256)" "$VAULT" 200000000000; send "$VAULT" "deposit(uint256,address)" 200000000000 "$ADDR"
+if [ "$(cast call "$VAULT" 'totalAssets()(uint256)' --rpc-url "$RPC" | awk '{print $1}')" = "0" ]; then send "$USDC" "mint(address,uint256)" "$ADDR" 250000000000; send "$USDC" "approve(address,uint256)" "$VAULT" 200000000000; send "$VAULT" "deposit(uint256,address)" 200000000000 "$ADDR"; else echo "  vault already funded"; fi
 
 echo "▶ manifest for the app"
 jq '.network="testnet" | .explorer="https://testnet.monadvision.com" | .rpcs=["https://rpc-testnet.monadinfra.com","https://rpc.ankr.com/monad_testnet"] | .assets |= map(.mock=true)' "$M" > .dev/m.tmp && mv .dev/m.tmp "$M"

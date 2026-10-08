@@ -218,3 +218,26 @@ describe("idempotent ladder planning", () => {
     expect(planSeriesLadder(now, [mon, nvda])).toHaveLength(2 * 6 * 2 * 9);
   });
 });
+
+
+describe("tiered ladders (mainnet assets)", () => {
+  const t = 1_791_400_000n;
+  const mk = (symbol: string, tier?: "major" | "alt" | "wrapped") => ({ symbol, assetId: `0x${"ab".repeat(32)}` as `0x${string}`, spotWad: 100_000_000_000_000_000_000n, ...(tier ? { tier } : {}) });
+  it("gives majors a deeper ladder than alts, and alts deeper than wrapped", () => {
+    const major = planSeriesLadder(t, [mk("BTC", "major")]).length;
+    const alt = planSeriesLadder(t, [mk("AAVE", "alt")]).length;
+    const wrapped = planSeriesLadder(t, [mk("WBTC", "wrapped")]).length;
+    expect(major).toBeGreaterThan(alt);
+    expect(alt).toBeGreaterThan(wrapped);
+    expect(wrapped).toBeGreaterThan(0);
+  });
+  it("is idempotent inside a bucket window and unique per asset", () => {
+    const a = planSeriesLadder(t, [mk("BTC", "major")]);
+    const b = planSeriesLadder(t + 60n, [mk("BTC", "major")]);
+    expect(new Set(a.map(plannedSeriesKey)).size).toBe(a.length);
+    expect(b.filter((x) => x.bucket !== "15m").map(plannedSeriesKey)).toEqual(a.filter((x) => x.bucket !== "15m").map(plannedSeriesKey));
+  });
+  it("untiered assets keep the full default ladder", () => {
+    expect(planSeriesLadder(t, [mk("MON")]).length).toBeGreaterThan(planSeriesLadder(t, [mk("MON", "major")]).length);
+  });
+});

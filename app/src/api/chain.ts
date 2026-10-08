@@ -15,6 +15,7 @@ export const monadMainnet = defineChain({
 
 // Optional Book views added by the safety-controls upgrade; absent on older deployments (calls are try/caught).
 const bookExtraAbi = parseAbi([
+  "function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])",
   "function paused() view returns (bool)",
   "function collateralCap() view returns (uint256)",
   "function totalCollateral() view returns (uint256)",
@@ -65,19 +66,34 @@ export function createChainApi(deployment: Deployment): Api {
   const assetBySym = new Map(deployment.assets.map((a) => [a.symbol, a]));
   const assetById = new Map(deployment.assets.map((a) => [a.assetId.toLowerCase(), a]));
 
-  // ───────── snapshots (cached a few seconds so parallel polls share one RPC burst)
-  let snapCache: { at: number; rows: QuoterSnapshot[] } | undefined;
-  const snaps = async (): Promise<QuoterSnapshot[]> => {
-    if (snapCache && Date.now() - snapCache.at < 2500) return snapCache.rows;
-    const rows: QuoterSnapshot[] = [];
-    for (let off = 0; off < 400; off += 50) {
-      const page = await client.snapshots(off, 50);
-      rows.push(...page);
-      if (page.length < 50) break;
-    }
-    snapCache = { at: Date.now(), rows };
-    return rows;
+  // ───────── series index: scan once, then only the tail; refresh just the asset being viewed (scales to 1000+ markets)
+  const snapById = new Map<Hex, QuoterSnapshot>();
+  const idsByAsset = new Map<string, Set<Hex>>();
+  const refreshedAt = new Map<string, number>();
+  let scanned = 0;
+  let scanning: Promise<void> | undefined;
+  const indexSnap = (s: QuoterSnapshot) => {
+    snapById.set(s.seriesId, s);
+    const d = decodeData(s.info.data); if (!d) return;
+    const k = d.assetId.toLowerCase(); let set = idsByAsset.get(k); if (!set) idsByAsset.set(k, (set = new Set()));
+    set.add(s.seriesId);
   };
+  const scanNew = (): Promise<void> => (scanning ??= (async () => {
+    try {
+      for (;;) {
+        const page = await client.snapshots(scanned, 50);
+        page.forEach(indexSnap); scanned += page.length;
+        if (page.length < 50) break;
+      }
+    } finally { scanning = undefined; }
+  })());
+  const refreshAsset = async (assetId: string, maxAgeMs = 2500) => {
+    const k = assetId.toLowerCase(); if (Date.now() - (refreshedAt.get(k) ?? 0) < maxAgeMs) return;
+    refreshedAt.set(k, Date.now());
+    const ids = [...(idsByAsset.get(k) ?? [])];
+    for (let i = 0; i < ids.length; i += 25) (await Promise.all(ids.slice(i, i + 25).map((id) => client.snapshot(id)))).forEach(indexSnap);
+  };
+  const allSnaps = (): QuoterSnapshot[] => [...snapById.values()];
 
   const decodeData = (data: Hex) => {
     try {
@@ -108,9 +124,9 @@ export function createChainApi(deployment: Deployment): Api {
     const onAccounts = (...a: unknown[]) => {
       const list = (a[0] as Address[]) ?? [];
       if (!list.length) { address = undefined; client = new MontionsClient({ deployment, publicClient }); } else if (address) { address = list[0]; rebuildWallet(e); }
-      snapCache = undefined; emit();
+      refreshedAt.clear(); emit();
     };
-    const onChain = () => { snapCache = undefined; emit(); };
+    const onChain = () => { refreshedAt.clear(); emit(); };
     e.on?.("accountsChanged", onAccounts); e.on?.("chainChanged", onChain);
   };
   let attached = false;
@@ -163,19 +179,20 @@ export function createChainApi(deployment: Deployment): Api {
       };
     },
     async assets(): Promise<Asset[]> {
-      const rows = await snaps();
+      await scanNew();
       return Promise.all(deployment.assets.map(async (a) => {
         let spot = 0;
         const oracle = oracleFor(a);
         if (oracle) { const [p] = (await publicClient.readContract({ address: oracle, abi: priceOracleAbi, functionName: "latestPrice", args: [a.assetId] })) as [bigint, bigint]; spot = Number(p) / WAD; }
-        const vols = rows.filter((r) => decodeData(r.info.data)?.assetId.toLowerCase() === a.assetId.toLowerCase() && r.volWad > 0n).map((r) => Number(r.volWad) / WAD);
+        const vols = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].map((id) => snapById.get(id)!).filter((r) => r.volWad > 0n).map((r) => Number(r.volWad) / WAD);
         const mock = a.mock ?? a.oracle !== "pyth";
-        return { symbol: a.symbol, name: a.name ?? (mock ? `${a.symbol} (demo pool)` : a.symbol), assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock };
+        return { symbol: a.symbol, name: a.name ?? (mock ? `${a.symbol} (demo pool)` : a.symbol), assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock, tier: a.tier };
       }));
     },
     async seriesFor(sym) {
-      const a = assetBySym.get(sym);
-      return (await snaps()).map(toView).filter((v): v is SeriesView => !!v && v.assetSymbol === sym && !!a);
+      const a = assetBySym.get(sym); if (!a) return [];
+      await scanNew(); await refreshAsset(a.assetId);
+      return [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].map((id) => toView(snapById.get(id)!)).filter((v): v is SeriesView => !!v);
     },
     async depth(id, levels = 8) {
       const d = await client.orderBookDepth(id, levels);
@@ -223,7 +240,7 @@ export function createChainApi(deployment: Deployment): Api {
         const filled = Number(yes ? after.yes - before.yes : after.no - before.no);
         const cost = Number(before.cash + deposit - after.cash) / USDC;
         steps[2].state = "done"; push();
-        snapCache = undefined;
+        refreshedAt.clear();
         if (filled === 0) return { ok: false, filled: 0, cost: 0, hash, error: "Nothing filled: the price moved beyond your limit. You were not charged." };
         return { ok: true, filled, cost, hash, block: Number(rc.blockNumber) };
       } catch (e) {
@@ -260,20 +277,28 @@ export function createChainApi(deployment: Deployment): Api {
     },
     async positions(): Promise<Position[]> {
       if (!address) return [];
-      const rows = (await snaps()).filter((s) => !!toView(s));
-      const bal = await Promise.all(rows.map((s) => client.positions(s.seriesId, address!)));
+      await scanNew();
+      const rows = allSnaps().filter((s) => !!toView(s));
+      const owner = address, book = c.book as Address;
+      const held = new Set<Hex>();
+      for (let i = 0; i < rows.length; i += 200) {            // one eth_call per 200 series (YES+NO ids): no per-series round trips
+        const chunk = rows.slice(i, i + 200);
+        const ids = chunk.flatMap((r) => [r.info.yesId, r.info.noId]);
+        const bals = (await publicClient.readContract({ address: book, abi: bookExtraAbi, functionName: "balanceOfBatch", args: [ids.map(() => owner), ids] })) as bigint[];
+        chunk.forEach((r, j) => { if (bals[2 * j] > 0n || bals[2 * j + 1] > 0n) held.add(r.seriesId); });
+      }
       const out: Position[] = [];
-      rows.forEach((s, i) => {
-        const b = bal[i]; if (b.yes === 0n && b.no === 0n) return;
-        const v = toView(s)!; const p = v.fairProb;
+      for (const id of held) {
+        const [fresh, b] = await Promise.all([client.snapshot(id), client.positions(id, owner)]); indexSnap(fresh);
+        const v = toView(fresh)!; const p = v.fairProb;
         const mark = v.status === "resolved" ? (v.yes ? Number(b.yes) : Number(b.no)) : v.status === "void" ? (Number(b.yes) + Number(b.no)) / 2 : Number(b.yes) * p + Number(b.no) * (1 - p);
-        out.push({ seriesId: s.seriesId, title: v.title, assetSymbol: v.assetSymbol, strike: v.strike, expiry: v.expiry, status: v.status, yesQty: Number(b.yes), noQty: Number(b.no), yes: v.yes, markValue: mark });
-      });
+        out.push({ seriesId: id, title: v.title, assetSymbol: v.assetSymbol, strike: v.strike, expiry: v.expiry, status: v.status, yesQty: Number(b.yes), noQty: Number(b.no), yes: v.yes, markValue: mark });
+      }
       return out;
     },
     async orders(): Promise<OrderRow[]> {
       if (!address) return [];
-      const rows = await snaps(); const title = new Map(rows.map((s) => [s.seriesId, s.title]));
+      await scanNew(); const title = new Map(allSnaps().map((s) => [s.seriesId, s.title]));
       return (await client.orders(address, 0, 100)).filter((o) => o.open).map((o) => ({ id: num(o.id), seriesId: o.seriesId, title: title.get(o.seriesId) ?? "", side: o.side === 0 ? "bid" : "ask", tick: o.tick, qty: num(o.qty), fromHeld: o.fromHeld }));
     },
     async cancel(orderId) { await guardNetwork(); const h = await requireClient().cancelOrder(BigInt(orderId)); await publicClient.waitForTransactionReceipt({ hash: h }); },
@@ -291,7 +316,7 @@ export function createChainApi(deployment: Deployment): Api {
       ]);
       const my = address ? ((await publicClient.readContract({ address: v, abi: makerVaultAbi, functionName: "balanceOf", args: [address] })) as bigint) : 0n;
       const price = supply > 0n ? Number(assets) / Number(supply) : 1;
-      return { tvl: Number(assets) / USDC, sharePrice: price, myShares: Number(my) / USDC, myAssets: (Number(my) / USDC) * price, activeSeries: (await snaps()).filter((s) => s.info.status === 1).length, exposurePct: 0.3 };
+      return { tvl: Number(assets) / USDC, sharePrice: price, myShares: Number(my) / USDC, myAssets: (Number(my) / USDC) * price, activeSeries: (await scanNew(), allSnaps().filter((s) => s.info.status === 1).length), exposurePct: 0.3 };
     },
     async vaultDeposit(amount) {
       await guardNetwork();

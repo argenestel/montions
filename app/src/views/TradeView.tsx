@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AccountView, ChainInfo, Quote, SeriesView, WalletState } from "../api/types";
+import { AssetPicker } from "../components/AssetPicker";
 import { BookLadder, BookSkeleton } from "../components/BookLadder";
 import { Num, Skel } from "../components/Motion";
 import { ConfirmSheet } from "../components/ConfirmSheet";
@@ -102,16 +103,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
           </PillPopover>
           <span className="w"> if </span>
           <PillPopover pill={(o, t) => <button className={`pill violet ${o ? "open" : ""}`} onClick={t}>{sym}<span className="chev">▾</span></button>}>
-            {(close) => (
-              <div className="opt-list">
-                {(assets ?? []).map((a) => (
-                  <button key={a.symbol} className={`opt ${a.symbol === sym ? "sel" : ""}`} onClick={() => { setSym(a.symbol); setStrike(undefined); setExpiry(undefined); close(); }}>
-                    <div><div className="l1">{a.symbol}</div><div className="l2">{a.name}</div></div>
-                    <span className="mono">{price(a.spot)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            {(close) => <AssetPicker assets={assets ?? []} current={sym} onPick={(symbol) => { setSym(symbol); setStrike(undefined); setExpiry(undefined); close(); }} />}
           </PillPopover>{" "}
           <PillPopover pill={(o, t) => <button className={`pill ${above ? "yes" : "no"} ${o ? "open" : ""}`} onClick={t}>ends {above ? "above" : "below"}<span className="chev">▾</span></button>}>
             {(close) => (

@@ -62,11 +62,22 @@ export const ASSET_STRIKE_TABLE: Readonly<Record<string, AssetStrikeSpec>> = {
   NVDA: DEFAULT_STRIKE_SPEC,
 };
 
+export type AssetTier = "major" | "alt" | "wrapped";
+
 export interface LadderAsset {
   symbol: string;
   assetId: `0x${string}`;
   spotWad: bigint;
+  /** Depth profile. Untiered assets (demo pools) keep the full default ladder. */
+  tier?: AssetTier;
 }
+
+/** How many markets each tier gets. Anyone can still create any other market permissionlessly for a registered asset. */
+export const TIER_PROFILES: Readonly<Record<AssetTier, { buckets: readonly LadderBucketId[]; expiriesPerBucket: number; strikeMultipliersBps: readonly number[] }>> = {
+  major: { buckets: ["15m", "1h", "4h", "1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: RELATIVE_STRIKE_MULTIPLIERS_BPS },
+  alt: { buckets: ["4h", "1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 9_500, 10_000, 10_500, 11_000] },
+  wrapped: { buckets: ["1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 9_500, 10_000, 10_500, 11_000] },
+};
 
 export interface PlannedSeries {
   symbol: string;
@@ -210,12 +221,14 @@ export function planSeriesLadder(
   const seen = new Set<string>();
   for (const asset of assets) {
     if (asset.spotWad <= 0n) throw new RangeError(`${asset.symbol} spot must be positive`);
-    const strikes = canonicalStrikes(asset.spotWad, strikeSpecFor(asset.symbol));
-    for (const bucket of LADDER_BUCKETS) {
+    const profile = asset.tier ? TIER_PROFILES[asset.tier] : undefined;
+    const spec = strikeSpecFor(asset.symbol);
+    const strikes = canonicalStrikes(asset.spotWad, profile ? { ...spec, multipliersBps: profile.strikeMultipliersBps } : spec);
+    for (const bucket of profile ? profile.buckets : LADDER_BUCKETS) {
       const expiries = nextCanonicalExpiries(
         nowSeconds,
         bucket,
-        expiriesPerBucket,
+        profile ? profile.expiriesPerBucket : expiriesPerBucket,
         minDuration,
         maxDuration,
       );
