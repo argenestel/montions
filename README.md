@@ -20,6 +20,8 @@ Built for the **Monad Metropolis hackathon — Finance & Trading track.**
 
 ## Architecture (all onchain)
 
+Full reference — contracts, units, trade lifecycle, settlement, safety controls, testnet addresses and how to verify them: **[docs/ONCHAIN.md](docs/ONCHAIN.md)**.
+
 | Contract | Role |
 |---|---|
 | `MontionsBook` | Series registry, CLOB (tick bitmaps, FIFO queues), escrow, split/merge, resolution, ERC-1155 YES/NO tokens, views for the UI |

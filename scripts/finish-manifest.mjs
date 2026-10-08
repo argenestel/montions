@@ -12,7 +12,7 @@ const keccak = async (s) => execFileSync("cast", ["keccak", s], { encoding: "utf
 const assets = [];
 for (const f of cfg.feeds.filter((x) => x.enabled)) assets.push({ symbol: f.symbol, name: f.symbol, assetId: await keccak(f.symbol), decimals: 18, oracle: "pyth", feedId: f.feedId, mock: false, tier: f.tier });
 // Keyless public endpoints give the app automatic failover; set RPCS to add provider URLs (Chainstack, Alchemy, QuickNode, Dwellir, BlockVision, …) in front.
-const PUBLIC_RPCS = { 143: ["https://rpc1.monad.xyz", "https://rpc2.monad.xyz", "https://rpc-mainnet.monadinfra.com", "https://monad-mainnet.drpc.org"], 10143: ["https://rpc.ankr.com/monad_testnet", "https://monad-testnet.drpc.org", "https://rpc-testnet.monadinfra.com"] };
+const PUBLIC_RPCS = { 143: ["https://rpc1.monad.xyz", "https://rpc2.monad.xyz", "https://rpc-mainnet.monadinfra.com"], 10143: ["https://rpc.ankr.com/monad_testnet", "https://rpc-testnet.monadinfra.com"] };
 const rpcs = [...(process.env.RPCS ?? "").split(",").map((s) => s.trim()).filter(Boolean), ...(PUBLIC_RPCS[Number(meta.chainId)] ?? [])].filter((u, i, a) => a.indexOf(u) === i && u !== meta.rpc);
 const manifest = {
   chainId: Number(meta.chainId), network: meta.network, rpc: meta.rpc, ...(rpcs.length ? { rpcs } : {}), explorer: meta.explorer,

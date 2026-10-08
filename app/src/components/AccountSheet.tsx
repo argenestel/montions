@@ -3,12 +3,13 @@ import { createPortal } from "react-dom";
 import type { AccountView, Hex } from "../api/types";
 import { usd, short } from "../lib/format";
 import { useApi } from "../lib/hooks";
+import { DOCS_URL } from "./Header";
 import { InstallButton } from "./InstallButton";
 
 type Row = { index: number; address: Hex; active: boolean; usdc?: number; native?: number };
 
 /** Account menu. For passkey wallets it lists the accounts derived from the same passkey ("one passkey, many keys") and switches between them without a new passkey prompt. */
-export function AccountSheet(props: { account?: AccountView; symbol: string; onChanged: () => void; onDisconnect: () => void; onClose: () => void }) {
+export function AccountSheet(props: { account?: AccountView; symbol: string; onChanged: () => void; onDisconnect: () => void; onClose: () => void; onFaucet?: () => Promise<void> }) {
   const api = useApi();
   const [rows, setRows] = useState<Row[]>(() => api.passkeyAccounts());
   const [busy, setBusy] = useState(false);
@@ -55,7 +56,9 @@ export function AccountSheet(props: { account?: AccountView; symbol: string; onC
           </div>
         )}
         {err && <p className="warnline" role="alert" style={{ marginTop: 10 }}>{err}</p>}
-        <InstallButton className="btn" style={{ width: "100%", marginTop: 14 }} />
+        {props.onFaucet && <button className="btn" style={{ width: "100%", marginTop: 14 }} disabled={busy} onClick={async () => { setBusy(true); setErr(undefined); try { await props.onFaucet!(); props.onClose(); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }}>Get test {props.symbol}</button>}
+        <a className="btn ghost" style={{ width: "100%", marginTop: 8, textAlign: "center", display: "block" }} href={DOCS_URL} target="_blank" rel="noreferrer">Docs · contracts and addresses</a>
+        <InstallButton className="btn" style={{ width: "100%", marginTop: 8 }} />
         <button className="btn" style={{ width: "100%", marginTop: 8 }} disabled={busy} onClick={() => { props.onDisconnect(); props.onClose(); }}>Disconnect</button>
         <button className="btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={busy} onClick={props.onClose}>Close</button>
       </div>

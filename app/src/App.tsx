@@ -10,17 +10,15 @@ import { withHealth, type Health } from "./lib/health";
 import { ApiCtx, CollateralCtx } from "./lib/hooks";
 import { ConnectSheet } from "./components/ConnectSheet";
 import { PositionsView } from "./views/PositionsView";
-import { ProofView } from "./views/ProofView";
 import { TradeView } from "./views/TradeView";
 import { VaultView } from "./views/VaultView";
 
-type Tab = "trade" | "positions" | "vault" | "proof";
+type Tab = "trade" | "positions" | "vault";
 const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
 const TABS: { id: Tab; icon: ReactElement; label: string }[] = [
   { id: "trade", icon: <Ico d="M4 16l5-5 4 4 7-8M15 7h5v5" />, label: "Trade" },
   { id: "positions", icon: <Ico d="M12 3v9h9M20.5 15A9 9 0 1112 3" />, label: "Positions" },
   { id: "vault", icon: <Ico d="M4 8h16v11H4zM8 8V6a4 4 0 018 0v2M12 13v2" />, label: "Vault" },
-  { id: "proof", icon: <Ico d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3A4 4 0 0011 18.7l1-1" />, label: "Onchain" },
 ];
 
 // The simulated API exists for UI development only. A production build never falls back to it silently.
@@ -95,7 +93,6 @@ export default function App() {
               {tab === "trade" && <TradeView account={account} wallet={wallet} info={info} onNeedConnect={connect} onToast={say} />}
               {tab === "positions" && <PositionsView account={account} onChanged={refresh} />}
               {tab === "vault" && <VaultView account={account} onChanged={refresh} />}
-              {tab === "proof" && <ProofView />}
             </main>
           </RiskGate>
           <nav className="dock" aria-label="Primary">
@@ -103,7 +100,7 @@ export default function App() {
               <button key={t.id} className={tab === t.id ? "sel" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}><span aria-hidden="true">{t.icon}</span><span className="t">{t.label}</span></button>
             ))}
           </nav>
-          {accountOpen && <AccountSheet account={account} symbol={info?.collateralSymbol ?? "USDC"} onChanged={refresh} onDisconnect={disconnect} onClose={() => setAccountOpen(false)} />}
+          {accountOpen && <AccountSheet account={account} symbol={info?.collateralSymbol ?? "USDC"} onFaucet={info?.faucet !== false && info?.network !== "mainnet" ? async () => { await api.faucet(); await refresh(); } : undefined} onChanged={refresh} onDisconnect={disconnect} onClose={() => setAccountOpen(false)} />}
           {connectOpen && <ConnectSheet options={api.connectOptions()} wallets={api.wallets()} onConnect={doConnect} onClose={() => setConnectOpen(false)} />}
           {toast && <div className="toast" role="status">{toast}</div>}
         </div>

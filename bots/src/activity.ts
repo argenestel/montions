@@ -89,6 +89,7 @@ async function main() {
   if (ready.length === 0) { log({ event: "no_funded_wallets", hint: "send testnet MON to the addresses above (faucet.monad.xyz) or set FUNDER_KEY" }); process.exitCode = 2; return; }
 
   // 2) trade
+  let lastAction = "";
   const stats = { buys: 0, rests: 0, cancels: 0, skipped: 0, failed: 0, spent: 0 };
   for (let round = 1; round <= ROUNDS; round++) {
     const t = pick(ready);
@@ -98,7 +99,7 @@ async function main() {
       for (let o = 0; ; o += 50) { const page = await t.client.snapshots(o, 50); snaps.push(...page); if (page.length < 50) break; }
       const open = snaps.filter((s) => Number(s.info.status) === 1 && Number(s.info.expiry) > now + 900 && (s.askQty > 0n || s.bidQty > 0n));
       if (open.length === 0) { stats.skipped++; log({ event: "skip", round, why: "no liquid open markets" }); await sleep(PAUSE_MS); continue; }
-      const roll = Math.random();
+      const roll = Math.random(); lastAction = roll > 0.85 ? "cancel" : roll > 0.65 ? "rest" : "buy";
       const mine = (await t.client.orders(t.account.address, 0, 50)).filter((o) => o.open);
 
       if (roll > 0.85 && mine.length > 0) {
@@ -129,8 +130,9 @@ async function main() {
         log({ event: "buy", round, wallet: t.account.address, side: yes ? "YES" : "NO", contracts, costUsd: Number(q.cost) / 1e6, avgTick: q.avgTick, hash: h });
       }
     } catch (e) {
-      stats.failed++; const msg = String((e as Error).message).split("\n")[0]!.slice(0, 160);
-      log({ event: "error", round, error: msg });
+      stats.failed++; const err = e as { shortMessage?: string; message?: string; details?: string; metaMessages?: string[] };
+      const msg = [err.shortMessage ?? String(err.message).split("\n")[0], err.details].filter(Boolean).join(" | ").slice(0, 220);
+      log({ event: "error", round, error: msg, side: lastAction });
       if (/insufficient|Signer had insufficient balance/i.test(msg)) { log({ event: "out_of_gas", hint: "top up the wallets with testnet MON" }); break; }
     }
     await sleep(PAUSE_MS + between(0, 2000));

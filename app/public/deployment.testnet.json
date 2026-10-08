@@ -35,7 +35,6 @@
   "explorer": "https://testnet.monadexplorer.com",
   "rpcs": [
     "https://rpc.ankr.com/monad_testnet",
-    "https://monad-testnet.drpc.org",
     "https://rpc-testnet.monadinfra.com"
   ]
 }

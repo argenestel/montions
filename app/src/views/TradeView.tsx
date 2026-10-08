@@ -90,7 +90,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
     <div className="trade-grid">
       <section>
         <div className="eyebrow">
-          <span className="tag soft" title={asset?.mock ? "Settles by 60s TWAP of a demo pool" : "Settles on Pyth's first price at expiry"}>{asset ? `${sym} ${price(spot)}` : "…"} · {asset?.mock ? "demo" : "Pyth"}</span>
+          {asset && spot > 0 && <span className="tag soft" title={asset.mock ? "Settles by 60s TWAP of a demo pool" : "Settles on Pyth's first price at expiry"}>{sym} {price(spot)}{asset.mock ? " · demo" : ""}</span>}
         </div>
 
         <h1 className="sentence">

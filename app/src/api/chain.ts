@@ -70,7 +70,8 @@ export function createChainApi(deployment: Deployment): Api {
   const rpcs = [...new Set([...(isLocal ? [] : extraRpcs()), deployment.rpc, ...(deployment.rpcs ?? [])])];
   // Multiple endpoints => automatic failover with retries; one endpoint => plain http with retries.
   const transport = rpcs.length > 1 ? fallback(rpcs.map((u) => http(u, { retryCount: 2, timeout: 12_000 })), { retryCount: 1 }) : http(rpcs[0], { retryCount: 2, timeout: 12_000 });
-  const publicClient = createPublicClient({ chain, transport, batch: { multicall: { wait: 16 } } }) as PublicClient;
+  // No Multicall3 batching: big view calls (Quoter.snapshots) run out of gas when wrapped by aggregate3 on public RPCs.
+  const publicClient = createPublicClient({ chain, transport }) as PublicClient;
   let client = new MontionsClient({ deployment, publicClient });
   let address: Address | undefined;
   let kind: ConnectKind | undefined;

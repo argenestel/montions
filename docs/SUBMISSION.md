@@ -20,7 +20,7 @@ Outcome-first binary options on Monad with a **fully onchain central limit order
 |---|---|
 | **Pyth** | Settlement oracle for all 34 markets (pull oracle, first price in `[expiry, expiry+300s]`). |
 | **Mera** (Category Labs) | **Passkey sign-in**: WebAuthn PRF → deterministic BIP-44 key → ordinary EOA. No extension, no seed phrase; the same passkey always re-derives the same address. Verified end-to-end in headless Chromium with a virtual PRF authenticator. |
-| **AUSD** (Agora) | Supported as an alternative collateral: `COLLATERAL=AUSD scripts/mainnet-deploy.sh`. The SDK reads the token's ERC-5267 domain (`"Agora Dollar"`, v1) and verifies it against `DOMAIN_SEPARATOR()` before signing a permit. USDC (Circle, domain v2) is the default. |
+| **AUSD** (Agora; the Agora mobile bounty needs Perpl trades, so it is not claimed) | Supported as an alternative collateral: `COLLATERAL=AUSD scripts/mainnet-deploy.sh`. The SDK reads the token's ERC-5267 domain (`"Agora Dollar"`, v1) and verifies it against `DOMAIN_SEPARATOR()` before signing a permit. USDC (Circle, domain v2) is the default. |
 
 ## Verification
 
@@ -42,7 +42,7 @@ Outcome-first binary options on Monad with a **fully onchain central limit order
 2. (0:20) **Create a passkey account** — Face/Touch ID, no extension. Show the address; sign out and sign in again → same address.
 3. (0:50) Pick an asset from the 34-asset picker; set payout $1,000, "ends above", strike, expiry. Show the price and the payoff chart.
 4. (1:20) Confirm: show slippage, re-quote, "Collateral 100% — pays $1,000 from locked USDC/AUSD". Fill onchain; open the tx in the explorer.
-5. (1:50) **Onchain** tab: every contract address, "no backend". Positions tab: the YES tokens.
+5. (1:50) Positions tab: the YES tokens. Open `docs/ONCHAIN.md` for every contract address and "no backend".
 6. (2:20) Vault tab: market-maker vault caps and exposure. Mention pause-new-risk-only and caps.
 7. (2:40) Close: Pyth first-price settlement; void-50/50 safety; open source.
 
