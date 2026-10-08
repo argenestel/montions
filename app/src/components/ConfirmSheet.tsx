@@ -2,8 +2,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChainInfo, Quote, SeriesView, Step, TxResult } from "../api/types";
 import { price, usd, whenText } from "../lib/format";
-import { useApi, useCollateral } from "../lib/hooks";
-import { PayoffChart } from "./PayoffChart";
+import { useApi } from "../lib/hooks";
 
 export function ConfirmSheet(props: {
   series: SeriesView; sym: string; spot: number; above: boolean; payout: number; contracts: number; quote?: Quote;
@@ -11,7 +10,6 @@ export function ConfirmSheet(props: {
 }) {
   const { series, sym, spot, above, payout, contracts, mock, slip } = props;
   const api = useApi();
-  const collateral = useCollateral();
   const [ok, setOk] = useState(false);
   const [steps, setSteps] = useState<Step[]>([]);
   const [res, setRes] = useState<TxResult>();
@@ -47,8 +45,7 @@ export function ConfirmSheet(props: {
     <div className="scrim" role="dialog" aria-modal="true" aria-label="Confirm position" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) props.onClose(); }} onKeyDown={(e) => { if (e.key === "Escape" && !busy) props.onClose(); }}>
       <div className="sheet">
         <div className="card">
-          <div className="subnote">Your position</div>
-          <div className="pos-title">
+                    <div className="pos-title">
             Make <mark>{usd(payout)}</mark> if {sym} ends {above ? "above" : "below"} <mark className="g">{price(series.strike)}</mark> by <mark className="v">{whenText(series.expiry)}</mark>
           </div>
           <div className="outcomes">
@@ -56,41 +53,34 @@ export function ConfirmSheet(props: {
               <div key={r.t} className={`outcome ${r.win ? "win" : "lose"}`}><span>{r.t}</span><span className="a">{r.a >= 0 ? "+" : "−"}{usd(Math.abs(r.a))}</span></div>
             ))}
           </div>
-          <PayoffChart strike={series.strike} spot={spot} payout={payout} cost={cost} yes={above} height={180} />
         </div>
         <div className="card">
           {!res ? (
             <>
               <dl className="kv">
-                <div><dt>Contracts</dt><dd className="mono">{contracts.toLocaleString()} × $1 payout</dd></div>
-                <div><dt>Side</dt><dd>{above ? "YES (above)" : "NO (below)"} · avg {quote?.avgTick ?? "—"}¢</dd></div>
-                <div><dt>Maximum loss</dt><dd className="neg">{usd(cost, 2)}</dd></div>
-                <div><dt>Maximum profit</dt><dd className="pos">{usd(profit, 2)}</dd></div>
-                <div><dt>Price limit</dt><dd>{maxTick}¢ per $1 <span className="subnote">(slippage {slip}¢)</span></dd></div>
-                <div><dt>Matching</dt><dd>Onchain CLOB · price-time</dd></div>
-                <div><dt>Settlement</dt><dd>{mock ? `Contract · 60s TWAP of demo ${sym} pool` : "Contract · Pyth first price at expiry"}</dd></div>
-                <div><dt>Collateral</dt><dd>100% — pays {usd(payout)} from locked {collateral}</dd></div>
+                <div><dt>Contracts</dt><dd className="mono">{contracts.toLocaleString()} · avg {quote?.avgTick ?? "—"}¢</dd></div>
+                <div><dt>You can lose</dt><dd className="neg">{usd(cost, 2)}</dd></div>
+                <div><dt>You can win</dt><dd className="pos">{usd(profit, 2)}</dd></div>
+                <div><dt>Limit</dt><dd>{maxTick}¢ <span className="subnote">(+{slip}¢)</span></dd></div>
               </dl>
-              {moved && <div className="banner" style={{ position: "static", borderRadius: 12, marginTop: 10 }} role="alert">Price moved: {usd(moved.from, 2)} → {usd(moved.to, 2)}. Review and confirm again.</div>}
+              {moved && <div className="banner" style={{ position: "static", borderRadius: 12, marginTop: 10 }} role="alert">Price moved {usd(moved.from, 2)} → {usd(moved.to, 2)}. Confirm again.</div>}
               <label className="check"><input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} />
-                <span>{mock
-                  ? "I understand this is a testnet binary option on a DEMO oracle. It pays $1 per contract if the condition is true at expiry and 0 otherwise; I can lose the full premium."
-                  : `I understand this binary option pays $1 per contract if true at expiry and $0 otherwise, that I can lose the full premium${realMoney ? " (real funds)" : ""}, and that this software is unaudited.`}</span>
+                <span>{mock ? "I understand this is a demo-oracle testnet option and I can lose the full premium." : `I can lose the full premium${realMoney ? " (real funds)" : ""}. This software is unaudited.`}</span>
               </label>
               {steps.length > 0 && <div className="steps">{steps.map((s) => (
                 <div key={s.label} className={`step ${s.state}`}><span className="ic">{s.state === "done" ? "✓" : s.state === "error" ? "!" : ""}</span>{s.label}{s.hash && <span style={{ marginLeft: "auto" }} className="addr">{tx(s.hash)}</span>}</div>
               ))}</div>}
               <button className="cta" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} disabled={!ok || busy || !quote || quote.filled === 0} onClick={go}>
-                {busy ? "Confirming…" : moved ? `Confirm new price ${usd(cost, 2)}` : ok ? `Confirm and pay ${usd(cost, 2)}` : `Tick the box to pay ${usd(cost, 2)}`}
+                {busy ? "Confirming…" : moved ? `Confirm ${usd(cost, 2)}` : `Pay ${usd(cost, 2)}`}
               </button>
               <button className="btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={busy} onClick={props.onClose}>Cancel</button>
             </>
           ) : res.ok ? (
             <div className="success">
               <svg className="check-draw" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" /><path d="M19 33l9 9 17-19" /></svg>
-              <div className="subnote">Filled onchain</div>
+              <div className="subnote">Filled</div>
               <div className="big">{res.filled.toLocaleString()} contracts</div>
-              <p className="subnote">Paid {usd(res.cost, 2)} · block {res.block?.toLocaleString()}</p>
+              <p className="subnote">Paid {usd(res.cost, 2)}</p>
               {res.hash && <p className="addr">{tx(res.hash)}</p>}
               <button className="cta" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={props.onClose}>Done</button>
             </div>

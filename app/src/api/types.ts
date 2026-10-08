@@ -2,6 +2,8 @@ export type Hex = `0x${string}`;
 
 export interface Asset {
   symbol: string;
+  /** Open markets that currently have resting orders. */
+  liquid?: number;
   name: string;
   assetId: Hex;
   spot: number;
@@ -103,6 +105,11 @@ export interface Api {
   trades(seriesId: Hex): Promise<TradeRow[]>;
   quoteBuy(seriesId: Hex, yes: boolean, contracts: number): Promise<Quote>;
   buy(seriesId: Hex, yes: boolean, contracts: number, maxPriceTick: number, onStep: (s: Step[]) => void): Promise<TxResult>;
+  /** Accounts derived from the signed-in passkey ("one passkey, many keys"); empty for other wallets. */
+  passkeyAccounts(): { index: number; address: Hex; active: boolean }[];
+  switchPasskeyAccount(index: number): Promise<AccountView>;
+  /** Balances of any address, for the account picker. */
+  peek(address: Hex): Promise<{ usdc: number; native: number }>;
   /** Which sign-in methods this deployment offers. */
   connectOptions(): ConnectKind[];
   connect(kind?: ConnectKind): Promise<AccountView>;

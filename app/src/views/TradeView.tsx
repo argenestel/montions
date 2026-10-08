@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AccountView, ChainInfo, Quote, SeriesView, WalletState } from "../api/types";
 import { AssetPicker } from "../components/AssetPicker";
 import { BookLadder, BookSkeleton } from "../components/BookLadder";
@@ -25,6 +25,15 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
   const [slip, setSlip] = useState(() => { try { return Number(localStorage.getItem("montions.slip") ?? 1); } catch { return 1; } });
   const setSlipSaved = (n: number) => { setSlip(n); try { localStorage.setItem("montions.slip", String(n)); } catch { /* private mode */ } };
 
+  // Start on an asset that actually has resting orders (until the user picks one themselves).
+  const picked = useRef(false);
+  useEffect(() => {
+    if (picked.current || !assets?.length) return;
+    const cur = assets.find((a) => a.symbol === sym);
+    if (cur && (cur.liquid ?? 0) > 0) { picked.current = true; return; }
+    const best = [...assets].filter((a) => !a.stale && (a.liquid ?? 0) > 0).sort((x, y) => (y.liquid ?? 0) - (x.liquid ?? 0))[0];
+    if (best) { picked.current = true; setSym(best.symbol); setStrike(undefined); setExpiry(undefined); }
+  }, [assets, sym]);
   const asset = assets?.find((a) => a.symbol === sym);
   const spot = asset?.spot ?? 1;
 
@@ -81,9 +90,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
     <div className="trade-grid">
       <section>
         <div className="eyebrow">
-          <span className="tag dark">Binary option</span>
-          <span className="tag soft">{asset ? `${sym} ${price(spot)}` : "…"}{asset?.mock ? " · DEMO oracle" : " · Pyth"}</span>
-          <span className="tag soft">{asset?.mock ? "Settles by 60s TWAP of a demo pool" : "Settles on Pyth's first price at expiry"}</span>
+          <span className="tag soft" title={asset?.mock ? "Settles by 60s TWAP of a demo pool" : "Settles on Pyth's first price at expiry"}>{asset ? `${sym} ${price(spot)}` : "…"} · {asset?.mock ? "demo" : "Pyth"}</span>
         </div>
 
         <h1 className="sentence">
@@ -91,7 +98,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
           <PillPopover pill={(o, t) => <button className={`pill amber ${o ? "open" : ""}`} onClick={t}>{usd(payout)}<span className="chev">▾</span></button>}>
             {() => (
               <div>
-                <div className="pop-title">How much do you want to make?</div>
+                <div className="pop-title">Payout</div>
                 <div className="big-input"><span>$</span>
                   <input inputMode="numeric" value={payout} onChange={(e) => setPayout(Math.min(1_000_000, Math.max(1, Math.floor(Number(e.target.value.replace(/\D/g, "")) || 1))))} />
                 </div>
@@ -103,28 +110,27 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
           </PillPopover>
           <span className="w"> if </span>
           <PillPopover pill={(o, t) => <button className={`pill violet ${o ? "open" : ""}`} onClick={t}>{sym}<span className="chev">▾</span></button>}>
-            {(close) => <AssetPicker assets={assets ?? []} current={sym} onPick={(symbol) => { setSym(symbol); setStrike(undefined); setExpiry(undefined); close(); }} />}
+            {(close) => <AssetPicker assets={assets ?? []} current={sym} onPick={(symbol) => { picked.current = true; setSym(symbol); setStrike(undefined); setExpiry(undefined); close(); }} />}
           </PillPopover>{" "}
           <PillPopover pill={(o, t) => <button className={`pill ${above ? "yes" : "no"} ${o ? "open" : ""}`} onClick={t}>ends {above ? "above" : "below"}<span className="chev">▾</span></button>}>
             {(close) => (
               <div>
-                <div className="pop-title">Where do you think it finishes?</div>
+                <div className="pop-title">Finishes</div>
                 <div className="seg">
                   <button className={`yes ${above ? "sel" : ""}`} onClick={() => { setAbove(true); setStrike(undefined); close(); }}>↗ Above</button>
                   <button className={`no ${!above ? "sel" : ""}`} onClick={() => { setAbove(false); setStrike(undefined); close(); }}>↘ Below</button>
                 </div>
-                <div className="subnote" style={{ marginTop: 10 }}>“Below” buys the NO side of the same onchain book — one liquidity pool for both directions.</div>
               </div>
             )}
           </PillPopover>{" "}
           <PillPopover pill={(o, t) => strike ? <button className={`pill yes ${o ? "open" : ""}`} onClick={t}>{price(strike)}<small>{strikePct >= 0 ? "↑" : "↓"}{Math.abs(strikePct * 100).toFixed(0)}%</small><span className="chev">▾</span></button> : <button className="pill yes loading" aria-busy="true"><Skel w="2.6em" h=".62em" r={999} /></button>}>
             {(close) => (
               <div>
-                <div className="pop-title">{sym} reference price {price(spot)}</div>
+                <div className="pop-title">Price · now {price(spot)}</div>
                 <div className="opt-list">
                   {atExpiry.map((s) => (
                     <button key={s.id} className={`opt ${s.strike === strike ? "sel" : ""}`} onClick={() => { setStrike(s.strike); close(); }}>
-                      <div><div className="l1">{price(s.strike)}</div><div className="l2">{s.strike >= spot ? "↑" : "↓"} {Math.abs((s.strike / spot - 1) * 100).toFixed(0)}% from now</div></div>
+                      <div><div className="l1">{price(s.strike)}</div><div className="l2">{s.strike >= spot ? "↑" : "↓"} {Math.abs((s.strike / spot - 1) * 100).toFixed(0)}%</div></div>
                       <span className={`chance ${chanceOf(s) < 0.25 ? "low" : ""}`}>{pct(chanceOf(s))}</span>
                     </button>
                   ))}
@@ -136,13 +142,13 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
           <PillPopover align="right" pill={(o, t) => expiry ? <button className={`pill blue ${o ? "open" : ""}`} onClick={t}>{whenText(expiry).replace(/,/g, "")}<span className="chev">▾</span></button> : <button className="pill blue loading" aria-busy="true"><Skel w="4.6em" h=".62em" r={999} /></button>}>
             {(close) => (
               <div>
-                <div className="pop-title">Pick an expiry (60s TWAP at that moment decides)</div>
+                <div className="pop-title">Expires</div>
                 <div className="opt-list">
                   {expiries.map((e) => {
                     const s = open.find((x) => x.expiry === e && x.strike === strike);
                     return (
                       <button key={e} className={`opt ${e === expiry ? "sel" : ""}`} onClick={() => { setExpiry(e); close(); }}>
-                        <div><div className="l1">{whenText(e)}</div><div className="l2">in {untilText(e, now)} · {durationLabel(e, now)}</div></div>
+                        <div><div className="l1">{whenText(e)}</div><div className="l2">in {untilText(e, now)}</div></div>
                         <span className={`chance ${chanceOf(s) < 0.25 ? "low" : ""}`}>{s ? pct(chanceOf(s)) : "—"}</span>
                       </button>
                     );
@@ -155,46 +161,44 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
 
         <div className="costline">
           <div className="costbox"><span className="lbl">It costs</span><span className="val">{selected && quote ? <Num value={cost} format={(n) => usd(n, n < 100 ? 2 : 0)} /> : <Skel w={104} h={30} r={10} />}</span></div>
-          <div className="chancebox"><b>{selected ? <Num value={chance * 100} format={(n) => `${Math.round(n)}%`} /> : <Skel w={34} h={14} />}</b> chance it happens <span style={{ color: "var(--faint)" }}>· model</span></div>
+          <div className="chancebox"><b>{selected ? <Num value={chance * 100} format={(n) => `${Math.round(n)}%`} /> : <Skel w={34} h={14} />}</b> chance</div>
         </div>
         <div className="subnote">
-          {!quote ? "Reading the onchain book…" : quote.filled > 0 ? <>Fills against the onchain book · avg {quote.avgTick}¢ per $1 · you win {usd(profit)} if it happens, lose {usd(cost)} if not.</> : "No resting orders on this market yet — try another strike or expiry."}
+          {!quote ? "Reading the book…" : quote.filled > 0 ? <>Win <b className="pos">{usd(profit)}</b> · lose <b className="neg">{usd(cost)}</b></> : "No orders here — try another strike or time."}
         </div>
-        {quote && quote.filled > 0 && !quote.complete && <div className="warnline" style={{ marginTop: 6 }}>Only {quote.filled.toLocaleString()} of {contracts.toLocaleString()} contracts are available right now — lower the amount to fill completely.</div>}
+        {quote && quote.filled > 0 && !quote.complete && <div className="warnline" style={{ marginTop: 6 }}>Only {quote.filled.toLocaleString()} of {contracts.toLocaleString()} available — lower the amount.</div>}
 
         <div className="cta-row">
           <button className="cta" disabled={!selected || !quote || quote.filled === 0 || tradingBlocked} onClick={buy}>
             {props.account?.address ? "Buy for" : "Connect & buy for"} {selected ? usd(cost, cost < 100 ? 2 : 0) : "—"} <span>→</span>
           </button>
-          <PillPopover pill={(o, t) => <button className={`btn ghost ${o ? "open" : ""}`} onClick={t} aria-label="Slippage tolerance">Slippage {slip}¢ ▾</button>}>
+          <PillPopover pill={(o, t) => <button className={`btn ghost ${o ? "open" : ""}`} onClick={t} aria-label="Slippage tolerance">{slip}¢ slippage ▾</button>}>
             {(close) => (
               <div>
-                <div className="pop-title">You won't pay more than this much above the quoted price (per $1 of payout).</div>
+                <div className="pop-title">Max slippage</div>
                 <div className="seg">{[0, 1, 2, 5].map((n) => <button key={n} className={`${n === slip ? "sel yes" : ""}`} onClick={() => { setSlipSaved(n); close(); }}>{n === 0 ? "None" : `${n}¢`}</button>)}</div>
               </div>
             )}
           </PillPopover>
-          {!props.account?.address && <span className="subnote">{props.info?.network === "mainnet" ? "Connect a wallet to trade." : "Connect a wallet to trade (test USDC faucet included)."}</span>}
           {props.info?.paused && <span className="warnline">Trading is paused.</span>}
-          {asset?.stale && <span className="warnline">{sym}'s price feed isn't updating right now, so trading is disabled for it. Pick another asset.</span>}
+          {asset?.stale && <span className="warnline">{sym} price feed is stale — trading off. Pick another asset.</span>}
         </div>
 
         <div className="chartwrap card">
-          <h3>Profit / loss at expiry <span className="hint">hover to inspect</span></h3>
+          <h3>Profit / loss</h3>
           {selected && quote ? <PayoffChart strike={selected.strike} spot={spot} payout={payout} cost={cost} yes={above} /> : <Skel w="100%" h={210} r={14} />}
         </div>
       </section>
 
       <aside>
         <div className="card">
-          <h3>Live orderbook <span className="hint">100% onchain CLOB</span></h3>
+          <h3>Orderbook</h3>
           {depth ? <BookLadder bids={depth.bids} asks={depth.asks} fairTick={selected ? Math.round(selected.fairProb * 100) : undefined} lastTick={selected?.lastTick}
             highlight={above && quote?.worstTick ? { side: "ask", worst: quote.worstTick } : undefined} /> : <BookSkeleton />}
-          <div className="onchain-note">ⓘ Orders match by price-time priority inside <span className="mono">MontionsBook</span>. No matcher, no indexer, no signed quotes.</div>
         </div>
         <div className="card">
           <h3>Recent trades</h3>
-          <div className="tape">{(trades ?? []).slice(0, 10).map((t, i) => (
+          <div className="tape">{(trades ?? []).slice(0, 6).map((t, i) => (
             <div key={i}><span className={t.takerIsBuyer ? "b" : "s"}>{t.tick}¢ {t.takerIsBuyer ? "buy" : "sell"}</span><span>{t.qty}</span><span className="t">{Math.max(0, Math.floor(now - t.ts))}s</span></div>
           ))}</div>
         </div>

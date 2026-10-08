@@ -1,0 +1,41 @@
+{
+  "chainId": 10143,
+  "rpc": "https://testnet-rpc.monad.xyz",
+  "contracts": {
+    "book": "0x4094e4CC956d989580233034b6B898db4aE6b78e",
+    "collateral": "0x844EAC441D9c70Dc6745Ca1a41643995B7B04612",
+    "monPool": "0x3c82D5a0521e063bF4158DC4B9732dB1165beeC0",
+    "monToken": "0xAE3Bc21Cf5A4bF961DbBeC69066A937b88e2704B",
+    "nvdaPool": "0x393ac3CbE2c25771901A19664F1E80Ce7fB80893",
+    "nvdaToken": "0xc607bdAb40122fB3579bebde9D6a4019f9B9ab74",
+    "oracleHub": "0xc907f4FEF8782d87f17D4CC181A3f0AE267735A3",
+    "quoter": "0x6EBFA2426f1ae0Bfd87fDFAFde093C1E583f457A",
+    "timelockResolver": "0x95c443a409AafA0308EaFCDe93ED6fc59e4FA785",
+    "twapResolver": "0x26F24a01ba7EE5C5Ca29f73b9BbB7d4cFAa0035e",
+    "vault": "0x20D88194103F8aF56332e9A45bd39Ff6Cb631E1C"
+  },
+  "assets": [
+    {
+      "assetId": "0xa83b79a2d1ac062104a3ba6844475b254e6a04f5e90a75ef63ed332f7e0bda83",
+      "decimals": 18,
+      "pool": "0x3c82D5a0521e063bF4158DC4B9732dB1165beeC0",
+      "symbol": "MON",
+      "token": "0xAE3Bc21Cf5A4bF961DbBeC69066A937b88e2704B"
+    },
+    {
+      "assetId": "0xe108948b9667048232851f26a1427d3a908b22da622562906ca50ea536c2ecfb",
+      "decimals": 18,
+      "pool": "0x393ac3CbE2c25771901A19664F1E80Ce7fB80893",
+      "symbol": "NVDA",
+      "token": "0xc607bdAb40122fB3579bebde9D6a4019f9B9ab74"
+    }
+  ],
+  "startBlock": 69267148,
+  "network": "testnet",
+  "explorer": "https://testnet.monadexplorer.com",
+  "rpcs": [
+    "https://rpc.ankr.com/monad_testnet",
+    "https://monad-testnet.drpc.org",
+    "https://rpc-testnet.monadinfra.com"
+  ]
+}

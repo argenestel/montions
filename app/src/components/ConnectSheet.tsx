@@ -4,10 +4,10 @@ import type { ConnectKind } from "../api/types";
 import { hasStoredPasskey, hostIsIpAddress } from "../lib/passkey";
 
 const COPY: Record<ConnectKind, { icon: string; title: string; sub: string }> = {
-  passkey: { icon: "🔑", title: "Sign in with passkey", sub: "Face ID / Touch ID / security key. No wallet app, no seed phrase — the same account on every device that has your passkey." },
-  "passkey-new": { icon: "✨", title: "Create a passkey account", sub: "New here? Creates a passkey on this device and an account derived from it." },
-  injected: { icon: "🦊", title: "Browser wallet", sub: "MetaMask, Rabby or any injected wallet." },
-  dev: { icon: "🧪", title: "Dev wallet (local chain only)", sub: "A throwaway account from the local node. Fake money." },
+  passkey: { icon: "🔑", title: "Sign in with passkey", sub: "Face ID or Touch ID" },
+  "passkey-new": { icon: "✨", title: "Create passkey account", sub: "No wallet app, no seed phrase" },
+  injected: { icon: "🦊", title: "Browser wallet", sub: "MetaMask, Rabby…" },
+  dev: { icon: "🧪", title: "Dev wallet", sub: "Local chain · fake money" },
 };
 
 export function ConnectSheet(props: { options: ConnectKind[]; onConnect: (k: ConnectKind) => Promise<void>; onClose: () => void }) {
@@ -23,7 +23,7 @@ export function ConnectSheet(props: { options: ConnectKind[]; onConnect: (k: Con
       <div className="card connect" style={{ maxWidth: 480, width: "100%", background: "#14122b" }}>
         <h1 className="page-title" style={{ fontSize: 26 }}>Connect</h1>
         <div className="rows">
-          {order.length === 0 && <div className="empty">No sign-in method is available in this browser. Passkeys need a secure (https) page.</div>}
+          {order.length === 0 && <div className="empty">No sign-in method available here. Passkeys need https.</div>}
           {order.map((k) => (
             <button key={k} className="rowcard optbtn" disabled={!!busy} onClick={() => go(k)}>
               <div><div className="ttl">{COPY[k].icon} {COPY[k].title}{busy === k ? " …" : ""}</div><div className="meta">{COPY[k].sub}</div></div>
@@ -31,9 +31,8 @@ export function ConnectSheet(props: { options: ConnectKind[]; onConnect: (k: Con
             </button>
           ))}
         </div>
-        {hostIsIpAddress() && <p className="subnote" style={{ marginTop: 10 }}>Passkeys are unavailable on an IP address. Open this page via <b>localhost</b> or an https domain to use them.</p>}
+        {hostIsIpAddress() && <p className="subnote" style={{ marginTop: 10 }}>Passkeys need <b>localhost</b> or https, not an IP.</p>}
         {err && <p className="warnline" role="alert" style={{ marginTop: 12 }}>{err}</p>}
-        <p className="subnote" style={{ marginTop: 12 }}>Passkey accounts are ordinary Monad accounts (Mera). They need a little MON for network fees.</p>
         <button className="btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={!!busy} onClick={props.onClose}>Close</button>
       </div>
     </div>,

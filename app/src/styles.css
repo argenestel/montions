@@ -371,3 +371,29 @@ button, .btn, .cta, .chip { touch-action: manipulation; -webkit-tap-highlight-co
   .header-right { flex: 1; justify-content: flex-end; min-width: 0; }
   .chip-bal b { font-size: 13px; }
 }
+
+/* ───────── calmer trade page ───────── */
+.subnote b.pos { color: var(--yes); font-weight: 600; } .subnote b.neg { color: var(--no); font-weight: 600; }
+.trade-grid .subnote { font-size: 15px; color: var(--muted); margin-top: 6px; }
+.eyebrow { margin-bottom: 14px; }
+.costline { margin-top: 20px; }
+.chartwrap { margin-top: 26px; }
+.card h3 { margin-bottom: 10px; }
+.card h3 .hint { font-weight: 500; }
+.page-sub { font-size: 14px; margin-bottom: 18px; }
+@media (max-width: 720px) {
+  .arch { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .arch .a { padding: 14px; border-radius: 16px; }
+  .arch .a h4 { font-size: 15px; margin: 0 0 4px; }
+  .arch .a p:not(.addr) { display: none; }
+}
+@media (max-width: 720px) {
+  .kv .role { display: none; }
+  .kv > div { gap: 10px; }
+  .card h3 { flex-wrap: wrap; row-gap: 2px; }
+}
+.acct { padding: 0; overflow: hidden; align-items: stretch; }
+.acct-main { flex: 1; text-align: left; border: 0; background: transparent; padding: 14px 16px; border-radius: 0; }
+.acct.on { border-color: var(--violet); }
+.acct .btn { margin: 10px 12px 10px 0; align-self: center; }
+.acct .badge { margin-left: 6px; }

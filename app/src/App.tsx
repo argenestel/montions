@@ -3,6 +3,7 @@ import { mockApi } from "./api/mock";
 import { createChainApi, loadDeployment } from "./api/chain";
 import type { AccountView, Api, ChainInfo, ConnectKind, WalletState } from "./api/types";
 import { Header } from "./components/Header";
+import { AccountSheet } from "./components/AccountSheet";
 import { Banners, ErrorBoundary, RiskGate } from "./components/Resilience";
 import { explain } from "./lib/errors";
 import { withHealth, type Health } from "./lib/health";
@@ -44,6 +45,7 @@ export default function App() {
   const [wallet, setWallet] = useState<WalletState>();
   const [toast, setToast] = useState<string>();
   const [connectOpen, setConnectOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const say = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(undefined), 5000); }, []);
 
   const refresh = useCallback(async () => {
@@ -86,7 +88,7 @@ export default function App() {
       <ApiCtx.Provider value={api}>
       <CollateralCtx.Provider value={info?.collateralSymbol ?? "USDC"}>
         <div className="app">
-          <Header info={info} account={account} walletKind={wallet?.kind} onDisconnect={disconnect} onConnect={connect} onFaucet={async () => { try { await api.faucet(); await refresh(); } catch (e) { say(explain(e)); } }} />
+          <Header info={info} account={account} walletKind={wallet?.kind} onAccount={() => setAccountOpen(true)} onConnect={connect} onFaucet={async () => { try { await api.faucet(); await refresh(); } catch (e) { say(explain(e)); } }} />
           <Banners info={info} wallet={wallet} account={account} health={health} onSwitch={switchNet} onRetry={() => { setHealth({ failing: false }); refresh(); }} />
           <RiskGate info={info}>
             <main key={tab} className="view">
@@ -101,6 +103,7 @@ export default function App() {
               <button key={t.id} className={tab === t.id ? "sel" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}><span aria-hidden="true">{t.icon}</span><span className="t">{t.label}</span></button>
             ))}
           </nav>
+          {accountOpen && <AccountSheet account={account} symbol={info?.collateralSymbol ?? "USDC"} onChanged={refresh} onDisconnect={disconnect} onClose={() => setAccountOpen(false)} />}
           {connectOpen && <ConnectSheet options={api.connectOptions()} onConnect={doConnect} onClose={() => setConnectOpen(false)} />}
           {toast && <div className="toast" role="status">{toast}</div>}
         </div>

@@ -2,7 +2,7 @@ import type { AccountView, ChainInfo } from "../api/types";
 import { short, usd } from "../lib/format";
 import { useBlip } from "./Motion";
 
-export function Header(props: { info?: ChainInfo; account?: AccountView; walletKind?: string; onConnect: () => void; onDisconnect: () => void; onFaucet: () => void }) {
+export function Header(props: { info?: ChainInfo; account?: AccountView; walletKind?: string; onConnect: () => void; onAccount: () => void; onFaucet: () => void }) {
   const { info, account } = props;
   const blip = useBlip(info?.block);
   return (
@@ -16,7 +16,7 @@ export function Header(props: { info?: ChainInfo; account?: AccountView; walletK
             <>
               <span className="chip chip-bal"><b>{usd(account.usdc)}</b> {info?.collateralSymbol ?? "USDC"}</span>
               {info?.faucet !== false && info?.network !== "mainnet" && <button className="btn btn-faucet" onClick={props.onFaucet}>+ Faucet</button>}
-              <button className="chip mono" onClick={props.onDisconnect} title={`${account.address} (click to disconnect)`} data-address={account.address} aria-label="Disconnect wallet">{props.walletKind?.startsWith("passkey") ? "🔑 " : ""}{short(account.address)} ✕</button>
+              <button className="chip mono" onClick={props.onAccount} title={account.address} data-address={account.address} aria-label="Account menu">{props.walletKind?.startsWith("passkey") ? "🔑 " : ""}{short(account.address)} ▾</button>
             </>
           ) : <button className="btn primary" onClick={props.onConnect}>Connect wallet</button>}
         </div>

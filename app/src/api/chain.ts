@@ -3,8 +3,10 @@ import { createPublicClient, createWalletClient, custom, decodeAbiParameters, de
 import { MontionsClient, MULTICALL3_ADDRESS, makerVaultAbi, monadTestnet, parseDeployment, priceOracleAbi, type Deployment, type QuoterSnapshot } from "@montions/sdk";
 import { explain, isUserRejection } from "../lib/errors";
 import { gasPadded } from "../lib/gasPad";
-import { createPasskeyAccount, endPasskeySession, explainPasskey, passkeySupported, signInWithPasskey, touchPasskeySession } from "../lib/passkey";
+import { createPasskeyAccount, endPasskeySession, explainPasskey, passkeyAccountAddresses, passkeyAccountIndex, passkeySupported, signInWithPasskey, switchPasskeyAccount, touchPasskeySession, type PasskeySession } from "../lib/passkey";
 import type { AccountView, Api, Asset, ChainInfo, ConnectKind, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView, WalletState } from "./types";
+
+const vaultConvertAbi = parseAbi(["function convertToAssets(uint256 shares) view returns (uint256)"]);
 
 const WAD = 1e18, USDC = 1e6;
 const MONAD_MAINNET_ID = 143;
@@ -29,9 +31,15 @@ const ROLES: Record<string, string> = {
   twapResolver: "Settles price series from pool TWAP (demo)", timelockResolver: "Settles governance-event series",
 };
 
+/** Extra RPC endpoints (comma separated, e.g. provider URLs that carry an API key) are tried before the manifest's own. */
+const extraRpcs = (): string[] => String(import.meta.env.VITE_RPC_URLS ?? "").split(",").map((u) => u.trim()).filter((u) => /^https:\/\//.test(u));
+
 export async function loadDeployment(): Promise<Deployment | undefined> {
   try {
-    const r = await fetch(`${import.meta.env.BASE_URL}deployment.json`, { cache: "no-store" });
+    // Dev only: `?deployment=testnet` loads /deployment.testnet.json instead of /deployment.json (look at another network without rebuilding).
+    const alt = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("deployment") : null;
+    const file = alt && /^[a-z0-9-]+$/.test(alt) ? `deployment.${alt}.json` : "deployment.json";
+    const r = await fetch(`${import.meta.env.BASE_URL}${file}`, { cache: "no-store" });
     if (!r.ok) return undefined;
     const text = await r.text();
     if (!text.trim().startsWith("{")) return undefined;
@@ -54,7 +62,7 @@ export function createChainApi(deployment: Deployment): Api {
     : deployment.chainId === MONAD_MAINNET_ID ? monadMainnet
     : defineChain({ id: deployment.chainId, name: isLocal ? "Local anvil (dev)" : `Chain ${deployment.chainId}`, nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [deployment.rpc] } }, contracts: { multicall3: { address: MULTICALL3_ADDRESS } } });
   const explorer = deployment.explorer ?? chain.blockExplorers?.default.url ?? "";
-  const rpcs = [deployment.rpc, ...(deployment.rpcs ?? []).filter((u) => u !== deployment.rpc)];
+  const rpcs = [...new Set([...(isLocal ? [] : extraRpcs()), deployment.rpc, ...(deployment.rpcs ?? [])])];
   // Multiple endpoints => automatic failover with retries; one endpoint => plain http with retries.
   const transport = rpcs.length > 1 ? fallback(rpcs.map((u) => http(u, { retryCount: 2, timeout: 12_000 })), { retryCount: 1 }) : http(rpcs[0], { retryCount: 2, timeout: 12_000 });
   const publicClient = createPublicClient({ chain, transport, batch: { multicall: { wait: 16 } } }) as PublicClient;
@@ -133,6 +141,11 @@ export function createChainApi(deployment: Deployment): Api {
     e.on?.("accountsChanged", onAccounts); e.on?.("chainChanged", onChain);
   };
   let attached = false;
+  const applyPasskey = (session: PasskeySession) => {
+    address = session.account.address;
+    const walletClient = createWalletClient({ account: session.account, chain, transport: gasPadded(http(rpcs[0], { retryCount: 2, timeout: 12_000 })) });
+    client = new MontionsClient({ deployment, publicClient, walletClient });
+  };
   const rebuildWallet = (e: Eth) => {
     const walletClient = createWalletClient({ account: address, chain, transport: custom(e as never) });
     client = new MontionsClient({ deployment, publicClient, walletClient });
@@ -205,7 +218,8 @@ export function createChainApi(deployment: Deployment): Api {
         }
         const vols = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].map((id) => snapById.get(id)!).filter((r) => r.volWad > 0n).map((r) => Number(r.volWad) / WAD);
         const mock = a.mock ?? a.oracle !== "pyth";
-        return { symbol: a.symbol, name: a.name ?? (mock ? `${a.symbol} (demo pool)` : a.symbol), assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock, tier: a.tier, stale };
+        const liquid = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].filter((id) => { const r = snapById.get(id); return !!r && r.info.status === 1 && (r.askQty > 0n || r.bidQty > 0n); }).length;
+        return { liquid, symbol: a.symbol, name: a.name ?? (mock ? `${a.symbol} (demo pool)` : a.symbol), assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock, tier: a.tier, stale };
       }));
     },
     async seriesFor(sym) {
@@ -269,15 +283,27 @@ export function createChainApi(deployment: Deployment): Api {
         return { ok: false, filled: 0, cost: 0, error: explain(e) };
       }
     },
+    passkeyAccounts() {
+      if (kind !== "passkey" && kind !== "passkey-new") return [];
+      const active = passkeyAccountIndex();
+      return passkeyAccountAddresses().map((a) => ({ ...a, address: a.address as Hex, active: a.index === active }));
+    },
+    async switchPasskeyAccount(index: number): Promise<AccountView> {
+      applyPasskey(switchPasskeyAccount(index));
+      emit();
+      return this.account();
+    },
+    async peek(addr: Hex) {
+      const [usdc, native] = await Promise.all([publicClient.readContract({ address: c.collateral as Address, abi: parseAbi(["function balanceOf(address) view returns (uint256)"]), functionName: "balanceOf", args: [addr as Address] }) as Promise<bigint>, publicClient.getBalance({ address: addr as Address })]);
+      return { usdc: Number(usdc) / USDC, native: Number(native) / WAD };
+    },
     async connect(want?: ConnectKind): Promise<AccountView> {
       const choice: ConnectKind = want ?? (useDevWallet ? "dev" : eth() ? "injected" : "passkey");
       if (choice === "passkey" || choice === "passkey-new") {
         try {
           const expire = () => { address = undefined; kind = undefined; client = new MontionsClient({ deployment, publicClient }); emit(); };
           const session = choice === "passkey" ? await signInWithPasskey(expire) : await createPasskeyAccount("Montions trader", expire);
-          address = session.account.address; kind = choice;
-          const walletClient = createWalletClient({ account: session.account, chain, transport: gasPadded(http(rpcs[0], { retryCount: 2, timeout: 12_000 })) });
-          client = new MontionsClient({ deployment, publicClient, walletClient });
+          kind = choice; applyPasskey(session);
           emit();
           return this.account();
         } catch (e) { throw new Error(explainPasskey(e)); }
@@ -349,8 +375,11 @@ export function createChainApi(deployment: Deployment): Api {
         publicClient.readContract({ address: v, abi: makerVaultAbi, functionName: "totalSupply" }) as Promise<bigint>,
       ]);
       const my = address ? ((await publicClient.readContract({ address: v, abi: makerVaultAbi, functionName: "balanceOf", args: [address] })) as bigint) : 0n;
-      const price = supply > 0n ? Number(assets) / Number(supply) : 1;
-      return { tvl: Number(assets) / USDC, sharePrice: price, myShares: Number(my) / USDC, myAssets: (Number(my) / USDC) * price, activeSeries: (await scanNew(), allSnaps().filter((s) => s.info.status === 1).length), exposurePct: 0.3 };
+      // Shares carry a 6-digit virtual offset (12 effective decimals), so price and balances go through convertToAssets.
+      const toAssets = (shares: bigint) => publicClient.readContract({ address: v, abi: vaultConvertAbi, functionName: "convertToAssets", args: [shares] }) as Promise<bigint>;
+      const [one, mine] = await Promise.all([toAssets(10n ** 12n), my > 0n ? toAssets(my) : Promise.resolve(0n)]);
+      void supply;
+      return { tvl: Number(assets) / USDC, sharePrice: Number(one) / USDC, myShares: Number(my) / 1e12, myAssets: Number(mine) / USDC, activeSeries: (await scanNew(), allSnaps().filter((s) => s.info.status === 1).length), exposurePct: 0.3 };
     },
     async vaultDeposit(amount) {
       await guardNetwork();

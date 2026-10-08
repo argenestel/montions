@@ -24,18 +24,18 @@ export function Banners(props: { info?: ChainInfo; wallet?: WalletState; account
   return (
     <>
       {wallet?.wrongNetwork && (
-        <div className="banner err" role="alert">Your wallet is on the wrong network (chain {wallet.chainId}). Switch to {info?.name ?? `chain ${wallet.expectedChainId}`} to trade.<button onClick={props.onSwitch}>Switch network</button></div>
+        <div className="banner err" role="alert">Wrong network. Switch to {info?.name ?? `chain ${wallet.expectedChainId}`}.<button onClick={props.onSwitch}>Switch network</button></div>
       )}
       {lowGas && (
-        <div className="banner" role="status">You have {account!.native.toFixed(3)} MON — you need MON to pay network fees (each trade costs a fraction of a MON).
+        <div className="banner" role="status">Low on MON ({account!.native.toFixed(3)}) — needed for fees.
           <button onClick={() => navigator.clipboard?.writeText(account!.address!)}>Copy my address</button>
           {info?.network === "testnet" && <a href="https://faucet.monad.xyz" target="_blank" rel="noreferrer"><button>Get testnet MON</button></a>}
         </div>
       )}
-      {info?.paused && <div className="banner" role="status">New trading is paused. You can still cancel orders, withdraw and redeem winnings.</div>}
-      {health.failing && <div className="banner err" role="alert">Can't reach the network ({health.lastError}). Showing the last data we have — retrying automatically.<button onClick={props.onRetry}>Retry now</button></div>}
+      {info?.paused && <div className="banner" role="status">Trading paused. You can still cancel, withdraw and redeem.</div>}
+      {health.failing && <div className="banner err" role="alert">Network unreachable ({health.lastError}). Retrying…<button onClick={props.onRetry}>Retry now</button></div>}
       {info && info.collateralCapUsd !== undefined && info.totalCollateralUsd !== undefined && info.totalCollateralUsd >= info.collateralCapUsd * 0.95 && (
-        <div className="banner" role="status">The launch deposit limit is almost full — new deposits may be rejected.</div>
+        <div className="banner" role="status">Deposit limit almost full.</div>
       )}
     </>
   );

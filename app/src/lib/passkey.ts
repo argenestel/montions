@@ -8,6 +8,7 @@ import { toViemAccount } from "@category-labs/mera/viem";
 import { HDKey } from "@scure/bip32";
 import { entropyToMnemonic, mnemonicToSeedSync } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
+import { privateKeyToAddress } from "viem/accounts";
 import type { Account } from "viem";
 
 const STORE_KEY = "montions.passkey.v1";
@@ -37,11 +38,27 @@ export const hasStoredPasskey = () => !!loadStored();
 
 export interface PasskeySession { account: Account; end: () => void }
 
+/** How many derived accounts a passkey exposes in the UI (any index works; this is only the picker size). */
+export const MAX_PASSKEY_ACCOUNTS = 5;
+const INDEX_KEY = "montions.passkey.account.v1";
+const storedIndex = () => { try { const n = Number(localStorage.getItem(INDEX_KEY)); return Number.isInteger(n) && n >= 0 && n < MAX_PASSKEY_ACCOUNTS ? n : 0; } catch { return 0; } };
+const saveIndex = (i: number) => { try { localStorage.setItem(INDEX_KEY, String(i)); } catch { /* private mode */ } };
+
+// The PRF output stays in memory only for the life of the signing session (cleared with it); it is never persisted.
+let prf: Uint8Array | undefined;
+let activeIndex = 0;
+export const passkeyAccountIndex = () => activeIndex;
+/** Addresses of the first `count` accounts derived from the current passkey (empty if signed out). */
+export function passkeyAccountAddresses(count = MAX_PASSKEY_ACCOUNTS): { index: number; address: `0x${string}` }[] {
+  if (!prf) return [];
+  return Array.from({ length: count }, (_, index) => ({ index, address: privateKeyToAddress(`0x${Array.from(deriveEvmKey(prf!, index), (b) => b.toString(16).padStart(2, "0")).join("")}`) }));
+}
+
 let current: Secp256k1SigningSession | undefined;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 let onExpire: (() => void) | undefined;
 
-export function endPasskeySession() { clearTimeout(idleTimer); current?.end(); current = undefined; }
+export function endPasskeySession() { clearTimeout(idleTimer); current?.end(); current = undefined; prf?.fill(0); prf = undefined; }
 /** Call on user activity: extends the idle timeout. After 20 idle minutes the in-memory key is destroyed and the next action re-prompts. */
 export function touchPasskeySession() {
   if (!current) return; clearTimeout(idleTimer);
@@ -49,11 +66,25 @@ export function touchPasskeySession() {
 }
 if (typeof window !== "undefined") window.addEventListener("pagehide", endPasskeySession);
 
-function start(prfOutput: Uint8Array, expire?: () => void): PasskeySession {
-  endPasskeySession(); onExpire = expire;
-  current = createSecp256k1SigningSession({ privateKey: deriveEvmKey(prfOutput) });
+function open(index: number): PasskeySession {
+  current?.end();
+  activeIndex = index; saveIndex(index);
+  current = createSecp256k1SigningSession({ privateKey: deriveEvmKey(prf!, index) });
   touchPasskeySession();
   return { account: toViemAccount(current) as unknown as Account, end: endPasskeySession };
+}
+
+function start(prfOutput: Uint8Array, expire?: () => void): PasskeySession {
+  endPasskeySession(); onExpire = expire;
+  prf = Uint8Array.from(prfOutput);
+  return open(storedIndex());
+}
+
+/** Switch to another account derived from the same passkey — no new passkey prompt. */
+export function switchPasskeyAccount(index: number): PasskeySession {
+  if (!prf) throw new Error("Your passkey session ended. Sign in again.");
+  if (!Number.isInteger(index) || index < 0 || index >= MAX_PASSKEY_ACCOUNTS) throw new Error("No such account");
+  return open(index);
 }
 
 /** Sign in with an existing passkey (this device's, or any synced passkey for this site). */

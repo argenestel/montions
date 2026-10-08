@@ -12,7 +12,7 @@ export function AssetPicker(props: { assets: Asset[]; current: string; onPick: (
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const match = (a: Asset) => !needle || a.symbol.toLowerCase().includes(needle) || a.name.toLowerCase().includes(needle);
-    return GROUPS.map((g) => ({ ...g, items: props.assets.filter((a) => (a.tier ?? "") === g.key && match(a)) })).filter((g) => g.items.length);
+    return GROUPS.map((g) => ({ ...g, items: props.assets.filter((a) => (a.tier ?? "") === g.key && match(a)).sort((x, y) => (y.liquid ?? 0) - (x.liquid ?? 0)) })).filter((g) => g.items.length);
   }, [props.assets, q]);
   return (
     <div style={{ minWidth: 300 }}>
@@ -24,7 +24,7 @@ export function AssetPicker(props: { assets: Asset[]; current: string; onPick: (
             <div className="grp">{g.label}</div>
             {g.items.map((a) => (
               <button key={a.symbol} className={`opt ${a.symbol === props.current ? "sel" : ""}`} onClick={() => props.onPick(a.symbol)}>
-                <div><div className="l1">{a.symbol}{a.mock && <span className="tag soft" style={{ marginLeft: 8 }}>demo</span>}</div><div className="l2">{a.name}</div></div>
+                <div><div className="l1">{a.symbol}{a.mock && <span className="tag soft" style={{ marginLeft: 8 }}>demo</span>}</div><div className="l2">{a.name}{a.liquid ? ` · ${a.liquid} quoted` : ""}</div></div>
                 <span className="mono">{a.stale ? <span className="tag soft" title="Price feed is not updating right now">stale</span> : a.spot ? price(a.spot) : "—"}</span>
               </button>
             ))}
