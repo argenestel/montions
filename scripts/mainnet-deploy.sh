@@ -9,8 +9,8 @@ RPC="${RPC_URL:-https://rpc.monad.xyz}"; KS="${KEYSTORE:-$ROOT/.dev/keystore/mon
 ADDR="$(cast wallet address --keystore "$KS" --password-file "$PASS")"
 [ "$(cast chain-id --rpc-url "$RPC")" = "143" ] || { echo "RPC is not Monad mainnet (143)"; exit 1; }
 [ "${CONFIRM_MAINNET:-}" = "I_UNDERSTAND_THIS_IS_UNAUDITED_AND_USES_REAL_FUNDS" ] || { echo "Set CONFIRM_MAINNET=I_UNDERSTAND_THIS_IS_UNAUDITED_AND_USES_REAL_FUNDS to proceed."; exit 3; }
-BAL="$(cast balance "$ADDR" --rpc-url "$RPC" --ether | awk '{print $1}')"; NEED="${MIN_MON:-60}"
-echo "mainnet deployer $ADDR  balance $BAL MON  (needs >= $NEED MON for ~34 assets; gas is charged on the gas limit)"
+BAL="$(cast balance "$ADDR" --rpc-url "$RPC" --ether | awk '{print $1}')"; NEED="${MIN_MON:-30}"
+echo "mainnet deployer $ADDR  balance $BAL MON  (needs >= $NEED MON: ~3.2 MON deploy + ~18 MON for the 732-market ladder at 102 gwei; gas is charged on the gas limit)"
 python3 -c "import sys; sys.exit(0 if float('$BAL') >= float('$NEED') else 1)" || { echo "Not enough MON. Fund: $ADDR"; exit 2; }
 python3 scripts/feeds.py >/dev/null || true     # refresh + re-verify the live feed catalogue just before deploying
 echo "enabled feeds: $(jq '[.feeds[]|select(.enabled)]|length' config/pyth-feeds.json)"
