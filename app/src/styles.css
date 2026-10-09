@@ -410,3 +410,10 @@ a.rowcard.optbtn { text-decoration: none; color: inherit; }
   .header.is-connected .logo-t { display: none; }
 }
 @media (max-width: 520px) { .logo-t { font-size: 17px; } .header.is-connected .logo-t { display: none; } }
+.lb .rowcard { gap: 14px; }
+.lb-rank { width: 28px; text-align: center; font-family: var(--display); font-weight: 700; color: var(--muted); }
+.lb .rowcard:nth-child(-n+3) .lb-rank { color: var(--amber); }
+.lb .amt { min-width: 64px; text-align: right; }
+.lb .rowcard { display: flex; align-items: center; flex-wrap: nowrap; }
+.lb .rowcard .amt { flex: none; }
+@media (max-width: 520px) { .lb .rowcard { padding: 12px 14px; gap: 10px; } .lb .amt { min-width: 52px; } }

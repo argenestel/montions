@@ -12,13 +12,15 @@ import { ConnectSheet } from "./components/ConnectSheet";
 import { PositionsView } from "./views/PositionsView";
 import { TradeView } from "./views/TradeView";
 import { VaultView } from "./views/VaultView";
+import { LeaderboardView } from "./views/LeaderboardView";
 
-type Tab = "trade" | "positions" | "vault";
+type Tab = "trade" | "positions" | "vault" | "leaders";
 const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
 const TABS: { id: Tab; icon: ReactElement; label: string }[] = [
   { id: "trade", icon: <Ico d="M4 16l5-5 4 4 7-8M15 7h5v5" />, label: "Trade" },
   { id: "positions", icon: <Ico d="M12 3v9h9M20.5 15A9 9 0 1112 3" />, label: "Positions" },
   { id: "vault", icon: <Ico d="M4 8h16v11H4zM8 8V6a4 4 0 018 0v2M12 13v2" />, label: "Vault" },
+  { id: "leaders", icon: <Ico d="M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0zM17 5h3v2a3 3 0 01-3 3M7 5H4v2a3 3 0 003 3" />, label: "Leaders" },
 ];
 
 // The simulated API exists for UI development only. A production build never falls back to it silently.
@@ -93,6 +95,7 @@ export default function App() {
               {tab === "trade" && <TradeView account={account} wallet={wallet} info={info} onNeedConnect={connect} onToast={say} />}
               {tab === "positions" && <PositionsView account={account} onChanged={refresh} />}
               {tab === "vault" && <VaultView account={account} onChanged={refresh} />}
+              {tab === "leaders" && <LeaderboardView account={account} info={info} />}
             </main>
           </RiskGate>
           <nav className="dock" aria-label="Primary">

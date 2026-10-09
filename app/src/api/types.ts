@@ -62,6 +62,10 @@ export interface AccountView {
   native: number;       // MON for gas
 }
 
+export interface TraderRow { address: Hex; orders: number; markets: number; open: number; held: number }
+export interface MarketRow { seriesId: Hex; title: string; assetSymbol: string; expiry: number; status: "open" | "resolved" | "void"; pool: number; trades: number }
+export interface Leaderboard { traders: TraderRow[]; markets: MarketRow[]; ordersScanned: number; ordersTotal: number }
+
 export interface VaultView {
   tvl: number;
   sharePrice: number;
@@ -122,6 +126,8 @@ export interface Api {
   cancel(orderId: number): Promise<void>;
   redeem(seriesId: Hex): Promise<void>;
   vault(): Promise<VaultView>;
+  /** Activity boards computed from onchain views only (orders, positions, pools). */
+  leaderboard(): Promise<Leaderboard>;
   vaultDeposit(amount: number): Promise<void>;
   vaultWithdraw(amount: number): Promise<void>;
 }

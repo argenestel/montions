@@ -1,11 +1,11 @@
 // Real onchain adapter: everything is read from view functions (no logs, no indexer, no backend).
 import { createPublicClient, createWalletClient, custom, decodeAbiParameters, defineChain, fallback, http, parseAbi, type Address, type Chain, type PublicClient } from "viem";
-import { MontionsClient, MULTICALL3_ADDRESS, makerVaultAbi, monadTestnet, parseDeployment, priceOracleAbi, type Deployment, type QuoterSnapshot } from "@montions/sdk";
+import { MontionsClient, MULTICALL3_ADDRESS, makerVaultAbi, montionsBookAbi, monadTestnet, parseDeployment, priceOracleAbi, type Deployment, type QuoterSnapshot } from "@montions/sdk";
 import { explain, isUserRejection } from "../lib/errors";
 import { gasPadded } from "../lib/gasPad";
 import { listWallets, startWalletDiscovery, walletById } from "../lib/wallets";
 import { createPasskeyAccount, endPasskeySession, explainPasskey, passkeyAccountAddresses, passkeyAccountIndex, passkeySupported, signInWithPasskey, switchPasskeyAccount, touchPasskeySession, type PasskeySession } from "../lib/passkey";
-import type { AccountView, Api, Asset, ChainInfo, ConnectKind, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView, WalletState } from "./types";
+import type { AccountView, Api, Asset, Leaderboard, MarketRow, TraderRow, ChainInfo, ConnectKind, Hex, Level, OrderRow, Position, Quote, SeriesView, Step, TradeRow, TxResult, VaultView, WalletState } from "./types";
 
 const vaultConvertAbi = parseAbi(["function convertToAssets(uint256 shares) view returns (uint256)"]);
 
@@ -24,6 +24,8 @@ const bookExtraAbi = parseAbi([
   "function paused() view returns (bool)",
   "function collateralCap() view returns (uint256)",
   "function totalCollateral() view returns (uint256)",
+  "function orderCount() view returns (uint64)",
+  "function pool(bytes32 seriesId) view returns (uint256)",
 ]);
 
 const ROLES: Record<string, string> = {
@@ -147,6 +149,8 @@ export function createChainApi(deployment: Deployment): Api {
     e.on?.("accountsChanged", onAccounts); e.on?.("chainChanged", onChain);
   };
   let attached = false;
+  const lbOrders = new Map<number, { maker: Address; seriesId: Hex; open: boolean }>();
+  let lbFrom = 0, lbNext = 1;
   const applyPasskey = (session: PasskeySession) => {
     address = session.account.address;
     const walletClient = createWalletClient({ account: session.account, chain, transport: gasPadded(transport) });
@@ -375,6 +379,53 @@ export function createChainApi(deployment: Deployment): Api {
       await guardNetwork();
       const cl = requireClient(); const b = await cl.positions(seriesId, address!);
       const h = await cl.redeem(seriesId, b.yes, b.no); await publicClient.waitForTransactionReceipt({ hash: h });
+    },
+    async leaderboard(): Promise<Leaderboard> {
+      await scanNew();
+      const book = c.book as Address;
+      const total = Number((await publicClient.readContract({ address: book, abi: bookExtraAbi, functionName: "orderCount" })) as bigint);
+      // Orders: scan incrementally (newest 2,000 at first), 150 cheap view calls per multicall.
+      if (lbFrom === 0) lbFrom = Math.max(1, total - 1999);
+      while (lbNext <= total) {
+        const ids = Array.from({ length: Math.min(150, total - Math.max(lbNext, lbFrom) + 1) }, (_, i) => Math.max(lbNext, lbFrom) + i);
+        if (!ids.length) break;
+        const res = await publicClient.multicall({ allowFailure: true, contracts: ids.map((id) => ({ address: book, abi: montionsBookAbi, functionName: "orderInfo", args: [BigInt(id)] }) as const) });
+        res.forEach((r, i) => { if (r.status === "success") { const o = r.result as { maker: Address; seriesId: Hex; open: boolean }; lbOrders.set(ids[i]!, { maker: o.maker, seriesId: o.seriesId, open: o.open }); } });
+        lbNext = ids[ids.length - 1]! + 1;
+      }
+      const by = new Map<Address, { orders: number; series: Set<Hex>; open: number }>();
+      for (const o of lbOrders.values()) { const e = by.get(o.maker) ?? { orders: 0, series: new Set<Hex>(), open: 0 }; e.orders++; e.series.add(o.seriesId); if (o.open) e.open++; by.set(o.maker, e); }
+      const top = [...by.entries()].sort((a, b) => b[1].orders - a[1].orders).slice(0, 20);
+      // Contracts held (YES + NO outcome tokens) for the top traders: exact balances from the Book's ERC-1155.
+      const rows = allSnaps().filter((s) => s.info.status === 1 || s.info.status === 2);
+      const held = async (owner: Address) => {
+        let sum = 0;
+        for (let i = 0; i < rows.length; i += 200) {
+          const ids = rows.slice(i, i + 200).flatMap((r) => [r.info.yesId, r.info.noId]);
+          const bals = (await publicClient.readContract({ address: book, abi: bookExtraAbi, functionName: "balanceOfBatch", args: [ids.map(() => owner), ids] })) as bigint[];
+          for (const b of bals) sum += Number(b);
+        }
+        return sum;
+      };
+      const traders: TraderRow[] = [];
+      for (let i = 0; i < top.length; i += 5) {
+        const part = await Promise.all(top.slice(i, i + 5).map(async ([address, e]) => ({ address: address as Hex, orders: e.orders, markets: e.series.size, open: e.open, held: await held(address).catch(() => 0) })));
+        traders.push(...part);
+      }
+      traders.sort((a, b) => b.orders - a.orders || b.held - a.held);
+      // Markets: collateral locked per series (open interest), plus the trades still in the Book's recent-trade ring.
+      const live = allSnaps().filter((s) => s.info.status === 1);
+      const pools: number[] = [];
+      for (let i = 0; i < live.length; i += 150) {
+        const res = await publicClient.multicall({ allowFailure: true, contracts: live.slice(i, i + 150).map((s) => ({ address: book, abi: bookExtraAbi, functionName: "pool", args: [s.seriesId] }) as const) });
+        res.forEach((r) => pools.push(r.status === "success" ? Number(r.result as bigint) / USDC : 0));
+      }
+      const ranked = live.map((s, i) => ({ s, pool: pools[i] ?? 0 })).sort((a, b) => b.pool - a.pool).slice(0, 10);
+      const markets: MarketRow[] = await Promise.all(ranked.map(async ({ s, pool }) => {
+        const v = toView(s); const t = await client.recentTrades(s.seriesId, 64).catch(() => []);
+        return { seriesId: s.seriesId, title: v?.title ?? s.title, assetSymbol: v?.assetSymbol ?? "", expiry: num(s.info.expiry), status: "open" as const, pool, trades: t.length };
+      }));
+      return { traders, markets, ordersScanned: lbOrders.size, ordersTotal: total };
     },
     async vault(): Promise<VaultView> {
       const v = (c.vault ?? c.makerVault) as Address | undefined;
