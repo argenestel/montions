@@ -65,7 +65,7 @@ export function ConfirmSheet(props: {
               </dl>
               {moved && <div className="banner" style={{ position: "static", borderRadius: 12, marginTop: 10 }} role="alert">Price moved {usd(moved.from, 2)} → {usd(moved.to, 2)}. Confirm again.</div>}
               <label className="check"><input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} />
-                <span>{mock ? "I understand this is a demo-oracle testnet option and I can lose the full premium." : `I can lose the full premium${realMoney ? " (real funds)" : ""}. This software is unaudited.`}</span>
+                <span>{mock ? "I understand I can lose the full premium. This market settles on its onchain pool's 60-second TWAP." : `I can lose the full premium${realMoney ? " (real funds)" : ""}. This software is unaudited.`}</span>
               </label>
               {steps.length > 0 && <div className="steps">{steps.map((s) => (
                 <div key={s.label} className={`step ${s.state}`}><span className="ic">{s.state === "done" ? "✓" : s.state === "error" ? "!" : ""}</span>{s.label}{s.hash && <span style={{ marginLeft: "auto" }} className="addr">{tx(s.hash)}</span>}</div>

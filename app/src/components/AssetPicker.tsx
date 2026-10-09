@@ -3,7 +3,7 @@ import type { Asset } from "../api/types";
 import { price } from "../lib/format";
 
 const GROUPS: { key: string; label: string }[] = [
-  { key: "stock", label: "Stocks" }, { key: "crypto", label: "Crypto" }, { key: "major", label: "Majors" }, { key: "alt", label: "Alts" }, { key: "wrapped", label: "Wrapped & liquid-staked" }, { key: "", label: "Demo markets" },
+  { key: "stock", label: "Stocks" }, { key: "crypto", label: "Crypto" }, { key: "major", label: "Majors" }, { key: "alt", label: "Alts" }, { key: "wrapped", label: "Wrapped & liquid-staked" }, { key: "", label: "Other" },
 ];
 
 /** Searchable, grouped asset list (the app supports dozens of assets). */
@@ -20,11 +20,11 @@ export function AssetPicker(props: { assets: Asset[]; current: string; onPick: (
       <div className="opt-list" style={{ maxHeight: 340 }}>
         {groups.length === 0 && <div className="subnote" style={{ padding: 12 }}>No asset matches “{q}”.</div>}
         {groups.map((g) => (
-          <div key={g.key || "demo"}>
+          <div key={g.key || "other"}>
             <div className="grp">{g.label}</div>
             {g.items.map((a) => (
               <button key={a.symbol} className={`opt ${a.symbol === props.current ? "sel" : ""}`} onClick={() => props.onPick(a.symbol)}>
-                <div><div className="l1">{a.symbol}{a.mock && <span className="tag soft" style={{ marginLeft: 8 }}>demo</span>}</div><div className="l2">{a.name}{a.liquid ? ` · ${a.liquid} quoted` : ""}</div></div>
+                <div><div className="l1">{a.symbol}</div><div className="l2">{a.name}{a.liquid ? ` · ${a.liquid} quoted` : ""}</div></div>
                 <span className="mono">{a.stale ? <span className="tag soft" title="Price feed is not updating right now">stale</span> : a.spot ? price(a.spot) : "—"}</span>
               </button>
             ))}

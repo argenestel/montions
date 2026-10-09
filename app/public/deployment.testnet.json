@@ -20,14 +20,20 @@
       "decimals": 18,
       "pool": "0x3c82D5a0521e063bF4158DC4B9732dB1165beeC0",
       "symbol": "MON",
-      "token": "0xAE3Bc21Cf5A4bF961DbBeC69066A937b88e2704B"
+      "token": "0xAE3Bc21Cf5A4bF961DbBeC69066A937b88e2704B",
+      "feedId": "0x31491744e2dbf6df7fcf4ac0820d18a609b49076d45066d3568424e62f686cd1",
+      "name": "Monad",
+      "tier": "crypto"
     },
     {
       "assetId": "0xe108948b9667048232851f26a1427d3a908b22da622562906ca50ea536c2ecfb",
       "decimals": 18,
       "pool": "0x393ac3CbE2c25771901A19664F1E80Ce7fB80893",
       "symbol": "NVDA",
-      "token": "0xc607bdAb40122fB3579bebde9D6a4019f9B9ab74"
+      "token": "0xc607bdAb40122fB3579bebde9D6a4019f9B9ab74",
+      "feedId": "0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
+      "name": "NVIDIA",
+      "tier": "stock"
     }
   ],
   "startBlock": 69267148,

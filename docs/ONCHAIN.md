@@ -31,7 +31,7 @@ Everything that touches money is a contract. The web app is a static page that r
 ## Settlement
 
 - **Mainnet:** `PythSettlementResolver` calls Pyth's `parsePriceFeedUpdatesUnique` and accepts the **first** price in `[expiry, expiry + 300 s]`. Nobody can choose a favourable timestamp. `PythOracle` reads pushed prices for pricing with a maximum age (default 3900 s, bound 7200 s).
-- **Testnet:** `TwapThresholdResolver` reads a 60 s TWAP from `OracleHub`, fed by demo `SpotPool`s. This is labelled demo in the app and is manipulable at low liquidity. Pyth exists on Monad testnet, but its feeds are not pushed regularly there (hours stale), so a Pyth-priced testnet would need a Hermes key and a push bot.
+- **Testnet:** `TwapThresholdResolver` reads a 60 s TWAP from `OracleHub`, fed by onchain `SpotPool`s on test tokens. A price-sync bot (`bots/src/price-sync.ts`) keeps each pool on the live Pyth price published on Monad mainnet; assets whose mainnet feed is not fresh (most equity feeds, which are only pushed occasionally) start from Pyth's last mainnet print and hold it. Pools are manipulable at low liquidity, which is why mainnet settles from Pyth directly.
 
 ## Reading the market without an indexer
 

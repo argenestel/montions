@@ -65,6 +65,8 @@ interface KeeperConfig {
   mode: KeeperMode;
   create: boolean;
   refreshLimit: number;
+  /** Skip resolving expired markets with no collateral locked (nobody holds a position, so nothing to redeem). Saves most keeper gas. */
+  resolveOnlyWithPool: boolean;
   intervalMs: number;
   once: boolean;
   dryRun: boolean;
@@ -95,6 +97,7 @@ function loadConfig(): KeeperConfig {
     mode: parseMode(process.env.KEEPER_MODE),
     create: envFlag("KEEPER_CREATE", true),
     refreshLimit: envInt("KEEPER_REFRESH_LIMIT", 40, 0),
+    resolveOnlyWithPool: process.env.KEEPER_RESOLVE_ALL !== "1",
     intervalMs: envInt("KEEPER_INTERVAL_MS", 15_000, 250),
     once: hasFlag("--once"),
     dryRun: isDryRun(),
@@ -335,8 +338,17 @@ async function settleAndResolve(
   now: bigint,
   all: readonly OnchainSeries[],
 ): Promise<number> {
-  const expired = all.filter((item) => item.status === SERIES_STATUS.Open && now > item.expiry);
+  let expired = all.filter((item) => item.status === SERIES_STATUS.Open && now > item.expiry);
   if (expired.length === 0) return 0;
+  if (config.resolveOnlyWithPool) {
+    const poolAbi = [{ type: "function", name: "pool", stateMutability: "view", inputs: [{ name: "seriesId", type: "bytes32" }], outputs: [{ type: "uint256" }] }] as const;
+    const book = clients.context.deployment.contracts.book as `0x${string}`;
+    const pools = await Promise.all(expired.map((item) => clients.context.publicClient.readContract({ address: book, abi: poolAbi, functionName: "pool", args: [item.id] }).catch(() => 1n)));
+    const before = expired.length;
+    expired = expired.filter((_, i) => (pools[i] ?? 1n) > 0n);
+    if (before !== expired.length) logLine("keeper", { event: "resolve_skip_empty", skipped: before - expired.length, remaining: expired.length });
+    if (expired.length === 0) return 0;
+  }
 
   if (config.mode === "pool") {
     let resolved = 0;

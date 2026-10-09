@@ -34,7 +34,7 @@ forge script script/AddStocks.s.sol --rpc-url "$RPC" --keystore "$KS" --password
 # merge into both manifests (display names from the config)
 for F in "$M" app/public/deployment.testnet.json; do
   jq --slurpfile new deployments/new-assets.json --slurpfile cfg "$CFG" \
-     '.assets += ($new[0] | map(. as $a | $a + {name: (($cfg[0].assets[]|select(.symbol==$a.symbol)|.name) // $a.symbol)}))' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+     '.assets += ($new[0] | map(. as $a | ($cfg[0].assets[]|select(.symbol==$a.symbol)) as $c | $a + {name: ($c.name // $a.symbol), feedId: $c.feedId}))' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
 done
 rm -f deployments/new-assets.json
 

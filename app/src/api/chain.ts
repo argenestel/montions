@@ -29,9 +29,9 @@ const bookExtraAbi = parseAbi([
 ]);
 
 const ROLES: Record<string, string> = {
-  book: "Orderbook · collateral · settlement", quoter: "Fair value + book walking", oracleHub: "TWAP oracle over onchain pools (demo)",
+  book: "Orderbook · collateral · settlement", quoter: "Fair value + book walking", oracleHub: "TWAP oracle over onchain pools",
   pythOracle: "Pyth price adapter", pythResolver: "Settles from Pyth's first price at expiry", vault: "Onchain market maker", collateral: "Collateral token (USDC)",
-  twapResolver: "Settles price series from pool TWAP (demo)", timelockResolver: "Settles governance-event series",
+  twapResolver: "Settles price series from the pool TWAP", timelockResolver: "Settles governance-event series",
 };
 
 /** Extra RPC endpoints (comma separated, e.g. provider URLs that carry an API key) are tried before the manifest's own. */
@@ -236,7 +236,7 @@ export function createChainApi(deployment: Deployment): Api {
         const vols = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].map((id) => snapById.get(id)!).filter((r) => r.volWad > 0n).map((r) => Number(r.volWad) / WAD);
         const mock = a.mock ?? a.oracle !== "pyth";
         const liquid = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].filter((id) => { const r = snapById.get(id); return !!r && r.info.status === 1 && (r.askQty > 0n || r.bidQty > 0n); }).length;
-        return { liquid, symbol: a.symbol, name: a.name ?? (mock ? `${a.symbol} (demo pool)` : a.symbol), assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock, tier: a.tier, stale };
+        return { liquid, symbol: a.symbol, name: a.name ?? a.symbol, assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock, tier: a.tier, stale };
       }));
     },
     async seriesFor(sym) {
