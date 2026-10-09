@@ -34,6 +34,146 @@
       "feedId": "0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
       "name": "NVIDIA",
       "tier": "stock"
+    },
+    {
+      "symbol": "BTC",
+      "assetId": "0xe98e2830be1a7e4156d656a7505e65d08c67660dc618072422e9c78053c261e9",
+      "pool": "0xE6f6d02f3977B1897E1567EA4E64E66E09508963",
+      "token": "0x9071383B5E14811E947bfCcF2f123dA79eaA5593",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "BTC",
+      "feedId": "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
+    },
+    {
+      "symbol": "ETH",
+      "assetId": "0xaaaebeba3810b1e6b70781f14b2d72c1cb89c0b2b320c43bb67ff79f562f5ff4",
+      "pool": "0xC8D1C498103237F3882d60171e4DfE039343C6F6",
+      "token": "0x9990A2570d890B0f5C961956dE2BE20234531e05",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "ETH",
+      "feedId": "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace"
+    },
+    {
+      "symbol": "SOL",
+      "assetId": "0x0a3ec4fc70eaf64faf6eeda4e9b2bd4742a785464053aa23afad8bd24650e86f",
+      "pool": "0xc0898A05d44235f2CA8E4913421E74c3B95b7B37",
+      "token": "0x24807afc8549e1ebb152fca22a5f346b4009D585",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "SOL",
+      "feedId": "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d"
+    },
+    {
+      "symbol": "BNB",
+      "assetId": "0x3ed03c38e59dc60c7b69c2a4bf68f9214acd953252b5a90e8f5f59583e9bc3ae",
+      "pool": "0x1FDAe986Cb8f1c0dba57b1B4d6D9De50caAA9d94",
+      "token": "0x2BDb2A7Edc1Bb2058D28332C10CaEbfa80449662",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "BNB",
+      "feedId": "0x2f95862b045670cd22bee3114c39763a4a08beeb663b145d283c31d7d1101c4f"
+    },
+    {
+      "symbol": "DOGE",
+      "assetId": "0x9a3f52b1b31ae58da40209f38379e78c3a0756495a0f585d0b3c84a9e9718f9d",
+      "pool": "0xccaEc285F40849229D0cb6C6a83B0d0610B97FF8",
+      "token": "0x507377b2063286e55399E3Ec3AC4FE98638C648B",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "DOGE",
+      "feedId": "0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c"
+    },
+    {
+      "symbol": "LINK",
+      "assetId": "0x921a3539bcb764c889432630877414523e7fbca00c211bc787aeae69e2e3a779",
+      "pool": "0x062b1749B3F298A356E53E128d2c463B88796425",
+      "token": "0xc00A5b03a5ee9AA84116ADFB3FE8b6a764BBd1a1",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "LINK",
+      "feedId": "0x8ac0c70fff57e9aefdf5edf44b51d62c2d433653cbb2cf5cc06bb115af04d221"
+    },
+    {
+      "symbol": "AVAX",
+      "assetId": "0x49f18ed70c3220abb735efdc7fce309e384d008d4bc14c846dcce9e31050e29b",
+      "pool": "0x35B8D9B8E3D220eb0E6a88a9FF98D9e846F5b675",
+      "token": "0xa85B389954096Ae490898Eb84E17F541C89f7E26",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "AVAX",
+      "feedId": "0x93da3352f9f1d105fdfe4971cfa80e9dd777bfc5d0f683ebb6e1294b92137bb7"
+    },
+    {
+      "symbol": "ADA",
+      "assetId": "0x4e1e6d8aa1ff8f43f933718e113229b0ec6b091b699f7a8671bcbd606da36eea",
+      "pool": "0xFfC72AF95a771f18D4bB51F92e5BFA25fC0F612e",
+      "token": "0x94BcC61bC18f74031B93A147ca3682999391A878",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "ADA",
+      "feedId": "0x2a01deaec9e51a579277b34b122399984d0bbf57e2458a7e42fecd2829867a0d"
+    },
+    {
+      "symbol": "AAVE",
+      "assetId": "0xde46fbfa339d54cd65b79d8320a7a53c78177565c2aaf4c8b13eed7865e7cfc8",
+      "pool": "0x6fCcD8418194741B551a0b6E58A48C92b7d8D2b3",
+      "token": "0x428288B9ECcF8f2A68BD30169f63f238C9347B23",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "AAVE",
+      "feedId": "0x2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445"
+    },
+    {
+      "symbol": "ARB",
+      "assetId": "0xc07524b7a4eecc2784fc7ac17ff2730f877f3cf7a2ceb4e2375fa40a103115d0",
+      "pool": "0x324C631BC6cbE241eF68c235C2803801E802A3A1",
+      "token": "0x8A513FA3A89db98504D74078008d0937EA5F8A24",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "ARB",
+      "feedId": "0x3fa4252848f9f0a1480be62745a4629d9eb1322aebab8a791e344b3b9c1adcf5"
+    },
+    {
+      "symbol": "OP",
+      "assetId": "0x8e1be729f7d2e3d575fdbf084a79e80f77cf0a5917a38cd25a249f9b072da943",
+      "pool": "0x296180506F967d87cd6C4b2289cD03CfE62dB034",
+      "token": "0xf9FD4A80b86876D0bFEDe7459a3f1a6E44100Caf",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "OP",
+      "feedId": "0x385f64d993f7b77d8182ed5003d97c60aa3361f3cecfe711544d2d59165e9bdf"
+    },
+    {
+      "symbol": "SEI",
+      "assetId": "0xf69733663f9c87b88d4ea5f216b7270a9096689c05615c447dea30decf4af68b",
+      "pool": "0xa8d8F0Ad06525DA06046fc7364a78765CA1E92cF",
+      "token": "0xb42a18a4bf3F7635831D28689B41B3298B515bD9",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "SEI",
+      "feedId": "0x53614f1cb0c031d4af66c04cb9c756234adad0e1cee85303795091499a4084eb"
+    },
+    {
+      "symbol": "APT",
+      "assetId": "0x3a540c592f9dbcbbe2f3f7f7a25a9554cef45a0c93b7209090ddcb77180f6ab1",
+      "pool": "0x16107836249A5b288124daCE9A5f69B2B25a9681",
+      "token": "0x7050373dF63E0C939b20acB5900Fab9de0b0698C",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "APT",
+      "feedId": "0x03ae4db29ed4ae33d323568895aa00337e658e348b37509f5372ae51f0af00d5"
+    },
+    {
+      "symbol": "HYPE",
+      "assetId": "0xa8631acbe37917ccaaf28385e6997f2db9e3876151964f689ee4762ac40f71b8",
+      "pool": "0xE6a6391B3FeE9951188A864944eB3Ea4256F6367",
+      "token": "0x6cA59861bFEa395439AC55F69E4873cde4b0C4Ad",
+      "decimals": 18,
+      "tier": "crypto",
+      "name": "HYPE",
+      "feedId": "0x4279e31cc369bbcc2faf022b382b080e32a8e689ff20fbc530d2a603eb6cd98b"
     }
   ],
   "startBlock": 69267148,
