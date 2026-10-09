@@ -38,7 +38,7 @@ const ROLES: Record<string, string> = {
 const extraRpcs = (chainId: number): string[] => {
   const urls = String(import.meta.env.VITE_RPC_URLS ?? "").split(",").map((u) => u.trim()).filter((u) => /^https:\/\//.test(u));
   // Alchemy: paste only the key; the endpoint for the network the app is on is built here. The key is public in the bundle, so restrict it by domain in the Alchemy dashboard.
-  const key = String(import.meta.env.VITE_ALCHEMY_KEY ?? "").trim();
+  const key = String(import.meta.env.VITE_ALCHEMY_KEY ?? "").trim().replace(/\/+$/, "").split("/").pop() ?? "";   // accepts the bare key or a pasted Alchemy URL
   const slug = chainId === 143 ? "monad-mainnet" : chainId === 10143 ? "monad-testnet" : "";
   return key && slug && /^[A-Za-z0-9_-]+$/.test(key) ? [`https://${slug}.g.alchemy.com/v2/${key}`, ...urls] : urls;
 };
