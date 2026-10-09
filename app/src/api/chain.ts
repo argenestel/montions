@@ -35,7 +35,13 @@ const ROLES: Record<string, string> = {
 };
 
 /** Extra RPC endpoints (comma separated, e.g. provider URLs that carry an API key) are tried before the manifest's own. */
-const extraRpcs = (): string[] => String(import.meta.env.VITE_RPC_URLS ?? "").split(",").map((u) => u.trim()).filter((u) => /^https:\/\//.test(u));
+const extraRpcs = (chainId: number): string[] => {
+  const urls = String(import.meta.env.VITE_RPC_URLS ?? "").split(",").map((u) => u.trim()).filter((u) => /^https:\/\//.test(u));
+  // Alchemy: paste only the key; the endpoint for the network the app is on is built here. The key is public in the bundle, so restrict it by domain in the Alchemy dashboard.
+  const key = String(import.meta.env.VITE_ALCHEMY_KEY ?? "").trim();
+  const slug = chainId === 143 ? "monad-mainnet" : chainId === 10143 ? "monad-testnet" : "";
+  return key && slug && /^[A-Za-z0-9_-]+$/.test(key) ? [`https://${slug}.g.alchemy.com/v2/${key}`, ...urls] : urls;
+};
 
 export async function loadDeployment(): Promise<Deployment | undefined> {
   try {
@@ -69,7 +75,7 @@ export function createChainApi(deployment: Deployment): Api {
     : deployment.chainId === MONAD_MAINNET_ID ? monadMainnet
     : defineChain({ id: deployment.chainId, name: isLocal ? "Local anvil (dev)" : `Chain ${deployment.chainId}`, nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [deployment.rpc] } }, contracts: { multicall3: { address: MULTICALL3_ADDRESS } } });
   const explorer = deployment.explorer ?? chain.blockExplorers?.default.url ?? "";
-  const rpcs = [...new Set([...(isLocal ? [] : extraRpcs()), deployment.rpc, ...(deployment.rpcs ?? [])])];
+  const rpcs = [...new Set([...(isLocal ? [] : extraRpcs(deployment.chainId)), deployment.rpc, ...(deployment.rpcs ?? [])])];
   // Multiple endpoints => automatic failover with retries; one endpoint => plain http with retries.
   const transport = rpcs.length > 1 ? fallback(rpcs.map((u) => http(u, { retryCount: 2, timeout: 12_000 })), { retryCount: 1 }) : http(rpcs[0], { retryCount: 2, timeout: 12_000 });
   // No Multicall3 batching: big view calls (Quoter.snapshots) run out of gas when wrapped by aggregate3 on public RPCs.
