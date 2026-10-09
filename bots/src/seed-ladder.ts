@@ -93,7 +93,7 @@ async function main(): Promise<void> {
     assets.push({
       symbol: asset.symbol,
       assetId: asset.assetId,
-      ...(asset.tier === "major" || asset.tier === "alt" || asset.tier === "wrapped" || asset.tier === "stock" ? { tier: asset.tier } : {}),
+      ...(asset.tier === "major" || asset.tier === "alt" || asset.tier === "wrapped" || asset.tier === "stock" || asset.tier === "crypto" ? { tier: asset.tier } : {}),
       spotWad: await readSpot(context, asset, mode),
     });
   }
