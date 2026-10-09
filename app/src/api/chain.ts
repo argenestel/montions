@@ -235,7 +235,7 @@ export function createChainApi(deployment: Deployment): Api {
         }
         const vols = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].map((id) => snapById.get(id)!).filter((r) => r.volWad > 0n).map((r) => Number(r.volWad) / WAD);
         const mock = a.mock ?? a.oracle !== "pyth";
-        const liquid = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].filter((id) => { const r = snapById.get(id); return !!r && r.info.status === 1 && (r.askQty > 0n || r.bidQty > 0n); }).length;
+        const liquid = [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].filter((id) => { const r = snapById.get(id); return !!r && r.info.status === 1 && r.fairTick >= 5 && r.fairTick <= 95 && (r.askQty > 0n || r.bidQty > 0n); }).length;   // near-the-money quotes only
         return { liquid, symbol: a.symbol, name: a.name ?? a.symbol, assetId: a.assetId, spot, vol: vols[0] ?? 0.8, mock, tier: a.tier, stale };
       }));
     },

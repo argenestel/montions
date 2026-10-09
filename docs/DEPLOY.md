@@ -156,3 +156,14 @@ For local Anvil, substitute `deployments/31337.json`. The helper creates the out
 `scripts/testnet-add-assets.sh stocks [count] [--dry]` adds demo stock/ETF assets (list in `config/stocks-demo.json`, 30 symbols) to the Monad **testnet** deployment: a mintable token and TWAP pool per symbol, hub and resolver registration (`script/AddStocks.s.sol`), then a light ladder of 10 markets per stock (`tier: "stock"`: 2 expiries × 5 strikes). Prices and volatilities are **approximate demo levels, not live quotes**: Pyth does list real equity feeds, but they are not pushed on Monad, so a real stock market would need a Hermes key and a push bot. The script refuses mainnet.
 
 Cost on testnet (gas is billed on the gas limit, about 102 gwei): roughly 0.31 MON per stock for the pool, about 0.3 MON for its markets, and about 0.11 MON for the vault to quote them. Twelve stocks need about 9 MON. The script prints the estimate, checks the balance and resumes if rerun. Afterwards run `scripts/testnet-bots.sh start`, commit `app/public/deployment.testnet.json` and redeploy the site.
+
+### Measured testnet gas (Monad testnet, ~102 gwei, billed on the gas limit)
+
+| Action | Cost |
+|---|---|
+| Add one asset (token + pool + registration) and its 10 markets | ~0.62 MON |
+| `MakerVault.refresh` (cancel + up to 6 orders + onchain fair value) | ~0.62 MON per market |
+| Price-sync step (mint + approve first time, then one swap) | ~0.01–0.03 MON |
+| `Book.resolve` of an expired market | ~0.1 MON (the keeper now skips markets with no collateral) |
+
+Vault refreshes dominate. For testnet liquidity, prefer a few refreshed near-the-money markets, or plain maker orders from a wallet, over refreshing every market.
