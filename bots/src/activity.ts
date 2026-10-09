@@ -99,7 +99,8 @@ async function main() {
       for (let o = 0; ; o += 50) { const page = await t.client.snapshots(o, 50); snaps.push(...page); if (page.length < 50) break; }
       const open = snaps.filter((s) => Number(s.info.status) === 1 && Number(s.info.expiry) > now + 900 && (s.askQty > 0n || s.bidQty > 0n));
       if (open.length === 0) { stats.skipped++; log({ event: "skip", round, why: "no liquid open markets" }); await sleep(PAUSE_MS); continue; }
-      const roll = Math.random(); lastAction = roll > 0.85 ? "cancel" : roll > 0.65 ? "rest" : "buy";
+      const forced = process.env.ACTION;   // buy | rest | cancel: force one action (e.g. to measure its gas)
+      const roll = forced === "cancel" ? 0.99 : forced === "rest" ? 0.7 : forced === "buy" ? 0.1 : Math.random(); lastAction = roll > 0.85 ? "cancel" : roll > 0.65 ? "rest" : "buy";
       const mine = (await t.client.orders(t.account.address, 0, 50)).filter((o) => o.open);
 
       if (roll > 0.85 && mine.length > 0) {
