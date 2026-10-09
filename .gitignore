@@ -24,3 +24,4 @@ deployments/31337.json
 .vercel
 
 app/public/deployment.fork.json
+deployments/new-assets*.json

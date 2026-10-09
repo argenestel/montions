@@ -86,11 +86,14 @@ async function main(): Promise<void> {
   const now = block.timestamp;
 
   const assets: LadderAsset[] = [];
+  // ONLY_SYMBOLS=AAPL,TSLA limits seeding to those assets (e.g. right after adding them) so existing ladders are not recreated.
+  const only = new Set((process.env.ONLY_SYMBOLS ?? "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
   for (const asset of context.deployment.assets) {
+    if (only.size && !only.has(asset.symbol.toUpperCase())) continue;
     assets.push({
       symbol: asset.symbol,
       assetId: asset.assetId,
-      ...(asset.tier === "major" || asset.tier === "alt" || asset.tier === "wrapped" ? { tier: asset.tier } : {}),
+      ...(asset.tier === "major" || asset.tier === "alt" || asset.tier === "wrapped" || asset.tier === "stock" ? { tier: asset.tier } : {}),
       spotWad: await readSpot(context, asset, mode),
     });
   }

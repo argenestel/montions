@@ -62,7 +62,7 @@ export const ASSET_STRIKE_TABLE: Readonly<Record<string, AssetStrikeSpec>> = {
   NVDA: DEFAULT_STRIKE_SPEC,
 };
 
-export type AssetTier = "major" | "alt" | "wrapped";
+export type AssetTier = "major" | "alt" | "wrapped" | "stock";
 
 export interface LadderAsset {
   symbol: string;
@@ -77,6 +77,8 @@ export const TIER_PROFILES: Readonly<Record<AssetTier, { buckets: readonly Ladde
   major: { buckets: ["15m", "1h", "4h", "1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: RELATIVE_STRIKE_MULTIPLIERS_BPS },
   alt: { buckets: ["4h", "1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 9_500, 10_000, 10_500, 11_000] },
   wrapped: { buckets: ["1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 9_500, 10_000, 10_500, 11_000] },
+  // Demo stocks: a light ladder (2 expiries x 5 strikes = 10 markets per asset) because every market costs gas to create and to quote.
+  stock: { buckets: ["1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_500, 9_750, 10_000, 10_250, 10_500] },
 };
 
 export interface PlannedSeries {

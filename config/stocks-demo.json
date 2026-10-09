@@ -1,0 +1,215 @@
+{
+ "note": "DEMO prices (US cents) and annualised vols are approximate, NOT live quotes. Real equity feeds exist on Pyth but are not pushed on Monad.",
+ "assets": [
+  {
+   "symbol": "AAPL",
+   "name": "Apple (demo)",
+   "cents": 23000,
+   "vol": 0.28,
+   "tier": "stock"
+  },
+  {
+   "symbol": "MSFT",
+   "name": "Microsoft (demo)",
+   "cents": 50000,
+   "vol": 0.25,
+   "tier": "stock"
+  },
+  {
+   "symbol": "GOOGL",
+   "name": "Alphabet (demo)",
+   "cents": 20000,
+   "vol": 0.3,
+   "tier": "stock"
+  },
+  {
+   "symbol": "AMZN",
+   "name": "Amazon (demo)",
+   "cents": 22000,
+   "vol": 0.32,
+   "tier": "stock"
+  },
+  {
+   "symbol": "META",
+   "name": "Meta Platforms (demo)",
+   "cents": 70000,
+   "vol": 0.38,
+   "tier": "stock"
+  },
+  {
+   "symbol": "TSLA",
+   "name": "Tesla (demo)",
+   "cents": 33000,
+   "vol": 0.6,
+   "tier": "stock"
+  },
+  {
+   "symbol": "AVGO",
+   "name": "Broadcom (demo)",
+   "cents": 33000,
+   "vol": 0.45,
+   "tier": "stock"
+  },
+  {
+   "symbol": "NFLX",
+   "name": "Netflix (demo)",
+   "cents": 120000,
+   "vol": 0.38,
+   "tier": "stock"
+  },
+  {
+   "symbol": "AMD",
+   "name": "AMD (demo)",
+   "cents": 16000,
+   "vol": 0.52,
+   "tier": "stock"
+  },
+  {
+   "symbol": "COIN",
+   "name": "Coinbase (demo)",
+   "cents": 33000,
+   "vol": 0.75,
+   "tier": "stock"
+  },
+  {
+   "symbol": "PLTR",
+   "name": "Palantir (demo)",
+   "cents": 17000,
+   "vol": 0.7,
+   "tier": "stock"
+  },
+  {
+   "symbol": "JPM",
+   "name": "JPMorgan (demo)",
+   "cents": 29000,
+   "vol": 0.22,
+   "tier": "stock"
+  },
+  {
+   "symbol": "V",
+   "name": "Visa (demo)",
+   "cents": 34000,
+   "vol": 0.2,
+   "tier": "stock"
+  },
+  {
+   "symbol": "WMT",
+   "name": "Walmart (demo)",
+   "cents": 10000,
+   "vol": 0.2,
+   "tier": "stock"
+  },
+  {
+   "symbol": "XOM",
+   "name": "Exxon Mobil (demo)",
+   "cents": 11000,
+   "vol": 0.22,
+   "tier": "stock"
+  },
+  {
+   "symbol": "LLY",
+   "name": "Eli Lilly (demo)",
+   "cents": 75000,
+   "vol": 0.35,
+   "tier": "stock"
+  },
+  {
+   "symbol": "ORCL",
+   "name": "Oracle (demo)",
+   "cents": 25000,
+   "vol": 0.4,
+   "tier": "stock"
+  },
+  {
+   "symbol": "BA",
+   "name": "Boeing (demo)",
+   "cents": 21000,
+   "vol": 0.35,
+   "tier": "stock"
+  },
+  {
+   "symbol": "DIS",
+   "name": "Disney (demo)",
+   "cents": 11500,
+   "vol": 0.28,
+   "tier": "stock"
+  },
+  {
+   "symbol": "HOOD",
+   "name": "Robinhood (demo)",
+   "cents": 11000,
+   "vol": 0.7,
+   "tier": "stock"
+  },
+  {
+   "symbol": "UBER",
+   "name": "Uber (demo)",
+   "cents": 9500,
+   "vol": 0.38,
+   "tier": "stock"
+  },
+  {
+   "symbol": "MSTR",
+   "name": "Strategy (demo)",
+   "cents": 33000,
+   "vol": 0.85,
+   "tier": "stock"
+  },
+  {
+   "symbol": "SPY",
+   "name": "S&P 500 ETF (demo)",
+   "cents": 65000,
+   "vol": 0.14,
+   "tier": "stock"
+  },
+  {
+   "symbol": "QQQ",
+   "name": "Nasdaq-100 ETF (demo)",
+   "cents": 58000,
+   "vol": 0.18,
+   "tier": "stock"
+  },
+  {
+   "symbol": "IWM",
+   "name": "Russell 2000 ETF (demo)",
+   "cents": 24000,
+   "vol": 0.2,
+   "tier": "stock"
+  },
+  {
+   "symbol": "GLD",
+   "name": "Gold ETF (demo)",
+   "cents": 33000,
+   "vol": 0.16,
+   "tier": "stock"
+  },
+  {
+   "symbol": "TLT",
+   "name": "20+yr Treasury ETF (demo)",
+   "cents": 8800,
+   "vol": 0.14,
+   "tier": "stock"
+  },
+  {
+   "symbol": "IBIT",
+   "name": "Bitcoin ETF (demo)",
+   "cents": 6500,
+   "vol": 0.5,
+   "tier": "stock"
+  },
+  {
+   "symbol": "ARKK",
+   "name": "ARK Innovation ETF (demo)",
+   "cents": 7500,
+   "vol": 0.4,
+   "tier": "stock"
+  },
+  {
+   "symbol": "SMH",
+   "name": "Semiconductor ETF (demo)",
+   "cents": 30000,
+   "vol": 0.35,
+   "tier": "stock"
+  }
+ ]
+}

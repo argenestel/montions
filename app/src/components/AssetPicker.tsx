@@ -3,7 +3,7 @@ import type { Asset } from "../api/types";
 import { price } from "../lib/format";
 
 const GROUPS: { key: string; label: string }[] = [
-  { key: "major", label: "Majors" }, { key: "alt", label: "Alts" }, { key: "wrapped", label: "Wrapped & liquid-staked" }, { key: "", label: "Demo markets" },
+  { key: "stock", label: "Stocks" }, { key: "major", label: "Majors" }, { key: "alt", label: "Alts" }, { key: "wrapped", label: "Wrapped & liquid-staked" }, { key: "", label: "Demo markets" },
 ];
 
 /** Searchable, grouped asset list (the app supports dozens of assets). */
