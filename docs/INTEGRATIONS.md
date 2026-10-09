@@ -30,6 +30,16 @@ VITE_RPC_URLS="https://monad-testnet.g.alchemy.com/v2/<domain-restricted-key>,ht
 RPC_URL="https://<your-provider-endpoint>"
 ```
 
+## Where keys go
+
+| Key | Used by | Local file | Vercel env var |
+|---|---|---|---|
+| Pyth Hermes | keeper / settlement bot | `.dev/hermes.key` (or `HERMES_API_KEY`) | — (never in the page) |
+| Sponsor RPC endpoints (Alchemy, Chainstack, QuickNode, Dwellir, BlockVision) | app reads + bots | `app/.env.local` → `VITE_RPC_URLS=` | `VITE_RPC_URLS` (public, so domain-restrict the key) |
+| Envio HyperRPC token | leaderboard events | `.dev/envio.key` | `ENVIO_TOKEN` (server-side function only) |
+
+`.env*` files (except `.env.example`) and `.dev/` are gitignored. Anything named `VITE_*` ends up in the browser bundle.
+
 ## Not integrated (deliberately)
 
 Perpl, Kuru, Chainlink CRE, Nansen, Zerion, MetaMask agent wallet and Aurora do not fit a binary-options book. Privy/Dynamic overlap with Mera. Envio would add an indexer to a project whose point is that it needs none.
