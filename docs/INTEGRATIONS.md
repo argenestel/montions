@@ -36,7 +36,7 @@ RPC_URL="https://<your-provider-endpoint>"
 |---|---|---|---|
 | Pyth Hermes | keeper / settlement bot | `.dev/hermes.key` (or `HERMES_API_KEY`) | — (never in the page) |
 | Sponsor RPC endpoints (Alchemy, Chainstack, QuickNode, Dwellir, BlockVision) | app reads + bots | `app/.env.local` → `VITE_RPC_URLS=` | `VITE_RPC_URLS` (public, so domain-restrict the key) |
-| Envio HyperRPC token | leaderboard events | `.dev/envio.key` | `ENVIO_TOKEN` (server-side function only) |
+| Alchemy API key | app + bots (primary RPC) | `app/.env.local` → `VITE_ALCHEMY_KEY=` | `VITE_ALCHEMY_KEY` (public, so domain-restrict it) |
 
 `.env*` files (except `.env.example`) and `.dev/` are gitignored. Anything named `VITE_*` ends up in the browser bundle.
 
