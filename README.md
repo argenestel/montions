@@ -8,6 +8,10 @@ You say what you want to happen. The app finds the market, quotes the price, and
 
 Built for the **Monad Metropolis hackathon — Finance & Trading track.**
 
+## Why
+
+Options are the right product sold through the wrong interface on the wrong venue. People already trade bounded-loss, asymmetric bets (prediction markets) and unbounded ones (perps); an option is what they want, but strike chains and greeks were built for market makers. The binary is the atom: price is the probability, max loss is the premium. Matching belongs onchain and Monad makes a CLOB in a contract practical: 100% collateral, so no margin engine, no liquidation, no clearing house. Settlement comes first: Pyth's first print at expiry, nobody picks the timestamp. Liquidity, not UX, is the honest bottleneck, so markets are quoted by a model-priced maker and stay open for weeks to months. Full argument and counter-arguments: **[docs/THESIS.md](docs/THESIS.md)**.
+
 ## How it works
 
 - A **market** is a yes/no question settled by a resolver contract, e.g. *"MON ≥ $1.05 at 12:00 UTC?"*.

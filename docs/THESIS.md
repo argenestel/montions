@@ -1,4 +1,25 @@
-# Market thesis (research notes, Oct 2026)
+# Thesis
+
+**Options are the right product, sold through the wrong interface, on the wrong venue.**
+
+1. **Demand is already here, mispackaged.** Retail trades two things at scale: perps (asymmetric upside, unbounded loss) and prediction markets (yes/no, price = probability). An option is what they actually want, bounded loss with an asymmetric payoff, but the interface (strike chains, implied vol, greeks) was built for market makers. Hunch's October 2026 demo reached ~150k views by changing nothing but the sentence.
+2. **The binary is the atom.** "MON above $X by Friday" is the simplest option: the price is the probability, the maximum loss is the premium, the payout is fixed. A vanilla call is a stack of binaries across strikes, so spreads and vanillas can be composed later from the same book. Polymarket already taught a hundred million people to read a price as a probability.
+3. **Matching belongs onchain, and only now can be.** Options liquidity lives on Deribit, Paradigm RFQ and Telegram because an orderbook was too expensive onchain and AMMs price convexity badly, so DeFi options became vaults selling to a few desks. Monad's gas makes a central limit order book inside a contract practical. With 100% collateral there is no margin engine, no liquidation, no clearing house and no socialised loss; matching and settlement are atomic in one contract. That is a product advantage, not ideology.
+4. **Settlement is the whole game.** Binaries are most manipulable right at the strike at expiry, so the oracle rule comes before anything else: Pyth's first signed print at or after expiry, nobody chooses the timestamp, void 50/50 if no valid print arrives within the grace period.
+5. **Liquidity is the honest bottleneck,** not UX. The answer is a model-priced maker that rests two-sided quotes on the book, a vault that does the same with pooled capital, permissionless market creation for any registered asset, and long-dated ladders (weekly, monthly, quarterly) so markets stay open long enough to attract flow. Thin books at 1–99¢ are survivable because every participant's loss is bounded.
+6. **It generalises past crypto.** The same contract and the same sentence work for stocks, FX and rates the moment a price feed exists. The interface never changes; only the asset list grows.
+
+**Counter-arguments taken seriously**
+
+- Regulators file binaries next to prediction markets; venue and product type matter, and the launch is capped and paused by default.
+- Market-making returns on binaries are thin and informed flow picks off a lagging model; the maker caps exposure per market and stops quoting near expiry.
+- Oracle lag at expiry is a real attack surface; first-print settlement and the void path are the mitigation, not a cure.
+
+**What Montions is betting on:** that the first options product most people use will be a sentence, settled onchain, with a loss they can see before they click.
+
+---
+
+# Appendix: market research notes (Oct 2026)
 
 > Compiled by Grok (xai/grok-4.6, xhigh) on 2026-10-10. X search was blocked for it, so tweet quotes, view counts and dates are **unverified**. Product/blog pages below were spot-checked and exist: hunch.cool, derive.xyz blog posts, dreamos.app.
 

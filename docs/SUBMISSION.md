@@ -1,6 +1,6 @@
 # Montions — Monad Metropolis submission
 
-Track: **Finance & Trading** · Repo: https://github.com/argenestel/montions · Live app: _<Vercel URL — fill in after deploy>_
+Track: **Finance & Trading** · Repo: https://github.com/argenestel/montions · Live app: https://montions.vercel.app · Thesis: `docs/THESIS.md`
 
 ## One-liner
 
@@ -48,7 +48,13 @@ Outcome-first binary options on Monad with a **fully onchain central limit order
 
 ## Pitch (≤ 2 min)
 
-Options on crypto are priced in strikes, greeks and expiries that most people never use. People think in outcomes: "will MON be above X by Friday?" Montions makes that the interface and puts the whole market onchain: a real CLOB on Monad (cheap enough to run an orderbook as a contract), 100% collateralised so there is no counterparty or clearing risk, settled by Pyth's first price at expiry so nobody can choose the timestamp, and a vault that keeps books quoted. Passkey login via Mera means a first-time user can place a trade with a fingerprint — no wallet install. Collateral is USDC or AUSD. It is open source, mobile-first, capped and honest about being unaudited.
+Options are the right product, sold through the wrong interface, on the wrong venue. Retail already trades bounded-loss bets on Polymarket and unbounded ones on perps; an option is what they actually want, but strike chains and greeks were built for market makers. Montions makes the interface a sentence: "I want to make $1,000 if MON is above $X by Friday." Price is the probability, max loss is the premium you see before you click.
+
+The binary is the atom of options, and it is the one product that can live fully onchain: 100% collateralised, so no margin engine, no liquidation, no clearing house, no socialised loss. Monad's gas makes a real central limit order book inside a contract practical, with matching and settlement atomic in one transaction. Settlement is Pyth's first signed print at or after expiry, so nobody picks the timestamp; if no print arrives the market voids 50/50.
+
+Liquidity, not UX, is the honest bottleneck. A model-priced maker rests two-sided quotes on every market, a vault does the same with pooled capital, anyone can list a market for any registered asset, and ladders run weekly, monthly and quarterly so markets stay open long enough to attract flow. The same contract and the same sentence work for stocks, FX and rates the moment a feed exists.
+
+Passkey login via Mera means a first-time user trades with a fingerprint. Collateral is USDC or AUSD. Open source, mobile-first, capped, and honest about being unaudited.
 
 ## Judge access
 
