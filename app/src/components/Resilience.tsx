@@ -50,7 +50,7 @@ export function RiskGate(props: { info?: ChainInfo; children: ReactNode }) {
   if (props.info?.network !== "mainnet" || ok) return <>{props.children}</>;
   return (
     <div className="scrim" role="dialog" aria-modal="true" aria-labelledby="risk-title">
-      <div className="card" style={{ maxWidth: 560, background: "#14122b" }}>
+      <div className="card" style={{ maxWidth: 560 }}>
         <h1 id="risk-title" className="page-title" style={{ fontSize: 28 }}>Before you trade real money</h1>
         <ul className="page-sub" style={{ paddingLeft: 18, margin: "0 0 16px" }}>
           <li>Montions is <b>new, unaudited software</b>. Smart-contract bugs can lose funds. Launch limits cap total deposits.</li>

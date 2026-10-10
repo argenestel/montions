@@ -4,8 +4,8 @@
   "description": "Outcome-first options on Monad with a fully onchain orderbook.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0912",
-  "theme_color": "#0a0912",
+  "background_color": "#efede8",
+  "theme_color": "#efede8",
   "icons": [
     {
       "src": "/icon-192.png",

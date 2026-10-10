@@ -27,6 +27,16 @@ export function whenText(expiry: number): string {
   return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+/** Short date for the sentence pill: "Oct 16", or the time when it is less than a day away. */
+export function dayText(expiry: number, now = Date.now() / 1000): string {
+  const d = new Date(expiry * 1000);
+  if (expiry - now < 20 * 3600) return d.toLocaleString("en-US", { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleString("en-US", { month: "short", day: "numeric" });
+}
+
+/** Full date for confirmations: "Oct 16, 2026". */
+export const fullDate = (expiry: number) => new Date(expiry * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
 export const durationLabel = (expiry: number, now = Date.now() / 1000) => {
   const s = expiry - now;
   if (s < 3600) return "Minutes";

@@ -26,7 +26,7 @@ export function BookLadder(props: { bids: Level[]; asks: Level[]; fairTick?: num
   return (
     <div className="book">
       <div className="book-head"><span>YES price</span><span /><span style={{ textAlign: "right" }}>contracts</span></div>
-      {empty && <div className="empty" style={{ margin: "10px 0", padding: 18 }}>No resting orders yet — the maker vault quotes shortly before and after each refresh.</div>}
+      {empty && <div className="empty" style={{ margin: "10px 0", padding: 18 }}>No resting orders yet.</div>}
       {asksTop.map((l) => <Row key={`a${l.tick}`} l={l} side="ask" max={max} mine={mine("ask", l.tick)} />)}
       <div className="book-mid">
         <span>last <b>{lastTick ? `${lastTick}¢` : "—"}</b></span>

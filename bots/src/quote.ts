@@ -7,7 +7,7 @@
  *
  *   DEPLOYMENT=../deployments/10143.json BOT_PRIVATE_KEY=0x… QUOTE_BUDGET=40 pnpm exec tsx src/quote.ts [--dry-run]
  *
- * Env: QUOTE_BUDGET (markets per run, 40), QUOTES_PER_TX (4), SPREAD_TICKS (3 each side), QUOTE_QTY (contracts per side, 300),
+ * Env: QUOTE_BUDGET (markets per run, 40), QUOTES_PER_TX (4), SPREAD_TICKS (3 each side), QUOTE_QTY (contracts per side, 1200),
  *      STALE_TICKS (re-quote when the book mid is this far from fair, 8), MIN_LIFE_SEC (skip markets expiring sooner, 1800).
  */
 import { encodeFunctionData, parseAbi, type Address, type Hex } from "viem";
@@ -27,7 +27,7 @@ async function main() {
   const budget = envInt("QUOTE_BUDGET", 40, 1);
   const perTx = envInt("QUOTES_PER_TX", 4, 1);
   const spread = envInt("SPREAD_TICKS", 3, 1);
-  const qty = BigInt(envInt("QUOTE_QTY", 300, 1));
+  const qty = BigInt(envInt("QUOTE_QTY", 1200, 1));
   const staleTicks = envInt("STALE_TICKS", 8, 1);
   const minLife = envInt("MIN_LIFE_SEC", 1_800, 0);
   const client = new MontionsClient({ deployment, chain: makeChain(deployment.chainId, context.rpcUrl), publicClient } as never);

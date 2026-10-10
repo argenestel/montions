@@ -35,7 +35,7 @@ export function AccountSheet(props: { account?: AccountView; symbol: string; onC
 
   return createPortal(
     <div className="scrim" role="dialog" aria-modal="true" aria-label="Account" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) props.onClose(); }} onKeyDown={(e) => { if (e.key === "Escape" && !busy) props.onClose(); }}>
-      <div className="card connect" style={{ maxWidth: 480, width: "100%", background: "#14122b" }}>
+      <div className="card connect">
         <h1 className="page-title" style={{ fontSize: 26 }}>Account</h1>
         {rows.length > 0 ? (
           <div className="rows">

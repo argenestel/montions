@@ -7,7 +7,7 @@ import { AccountSheet } from "./components/AccountSheet";
 import { Banners, ErrorBoundary, RiskGate } from "./components/Resilience";
 import { explain } from "./lib/errors";
 import { withHealth, type Health } from "./lib/health";
-import { ApiCtx, CollateralCtx } from "./lib/hooks";
+import { ApiCtx, CollateralCtx, DockCtx, type DockAction } from "./lib/hooks";
 import { ConnectSheet } from "./components/ConnectSheet";
 import { PositionsView } from "./views/PositionsView";
 import { TradeView } from "./views/TradeView";
@@ -15,7 +15,7 @@ import { VaultView } from "./views/VaultView";
 import { LeaderboardView } from "./views/LeaderboardView";
 
 type Tab = "trade" | "positions" | "vault" | "leaders";
-const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
+const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
 const TABS: { id: Tab; icon: ReactElement; label: string }[] = [
   { id: "trade", icon: <Ico d="M4 16l5-5 4 4 7-8M15 7h5v5" />, label: "Trade" },
   { id: "positions", icon: <Ico d="M12 3v9h9M20.5 15A9 9 0 1112 3" />, label: "Positions" },
@@ -44,6 +44,7 @@ export default function App() {
   const [info, setInfo] = useState<ChainInfo>();
   const [wallet, setWallet] = useState<WalletState>();
   const [toast, setToast] = useState<string>();
+  const [dockAction, setDockAction] = useState<DockAction>();
   const [connectOpen, setConnectOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const say = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(undefined), 5000); }, []);
@@ -87,6 +88,7 @@ export default function App() {
     <ErrorBoundary>
       <ApiCtx.Provider value={api}>
       <CollateralCtx.Provider value={info?.collateralSymbol ?? "USDC"}>
+      <DockCtx.Provider value={setDockAction}>
         <div className="app">
           <Header info={info} account={account} walletKind={wallet?.kind} onAccount={() => setAccountOpen(true)} onConnect={connect} onFaucet={async () => { try { await api.faucet(); await refresh(); } catch (e) { say(explain(e)); } }} />
           <Banners info={info} wallet={wallet} account={account} health={health} onSwitch={switchNet} onRetry={() => { setHealth({ failing: false }); refresh(); }} />
@@ -100,13 +102,17 @@ export default function App() {
           </RiskGate>
           <nav className="dock" aria-label="Primary">
             {TABS.map((t) => (
-              <button key={t.id} className={tab === t.id ? "sel" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}><span aria-hidden="true">{t.icon}</span><span className="t">{t.label}</span></button>
+              <button key={t.id} className={`tab ${tab === t.id ? "sel" : ""}`} title={t.label} aria-label={t.label} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>{t.icon}</button>
             ))}
+            {tab === "trade" && dockAction && (
+              <span className="act"><button className="cta" disabled={dockAction.disabled} onClick={dockAction.onClick}>{dockAction.label.replace(/ (\S+)$/, "")} <b>{dockAction.label.split(" ").pop()}</b><span className="arr">→</span></button></span>
+            )}
           </nav>
           {accountOpen && <AccountSheet account={account} symbol={info?.collateralSymbol ?? "USDC"} onFaucet={info?.faucet !== false && info?.network !== "mainnet" ? async () => { await api.faucet(); await refresh(); } : undefined} onChanged={refresh} onDisconnect={disconnect} onClose={() => setAccountOpen(false)} />}
           {connectOpen && <ConnectSheet options={api.connectOptions()} wallets={api.wallets()} onConnect={doConnect} onClose={() => setConnectOpen(false)} />}
           {toast && <div className="toast" role="status">{toast}</div>}
         </div>
+      </DockCtx.Provider>
       </CollateralCtx.Provider>
       </ApiCtx.Provider>
     </ErrorBoundary>

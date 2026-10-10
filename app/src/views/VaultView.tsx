@@ -13,7 +13,7 @@ export function VaultView(props: { account?: AccountView; onChanged: () => void 
   return (
     <div>
       <h1 className="page-title">Maker vault</h1>
-      <p className="page-sub">An onchain market maker that quotes every market. Deposits can lose value.</p>
+      <p className="page-sub">An onchain market maker that quotes markets around fair value. Deposits can lose value.</p>
       <div className="stats">
         <div className="stat"><div className="k">TVL</div><div className="v">{usd(v?.tvl ?? 0)}</div></div>
         <div className="stat"><div className="k">Share price</div><div className="v">{(v?.sharePrice ?? 1).toFixed(4)}</div></div>

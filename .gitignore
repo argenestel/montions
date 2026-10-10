@@ -25,3 +25,4 @@ deployments/31337.json
 
 app/public/deployment.fork.json
 deployments/new-assets*.json
+app/public/deployment.local.json

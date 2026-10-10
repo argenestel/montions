@@ -8,6 +8,15 @@ export const useApi = () => useContext(ApiCtx);
 export const CollateralCtx = createContext<string>("USDC");
 export const useCollateral = () => useContext(CollateralCtx);
 
+/** The primary action shown in the bottom dock ("Buy for $505 →"). The trade view registers it; the shell renders it. */
+export type DockAction = { label: string; disabled?: boolean; onClick: () => void } | undefined;
+export const DockCtx = createContext<(a: DockAction) => void>(() => {});
+export function useDockAction(action: DockAction, deps: unknown[]) {
+  const set = useContext(DockCtx);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { set(action); return () => set(undefined); }, deps);
+}
+
 /** Poll an async function; keeps the last good value on errors and backs off (x2, max 30s) while failing. */
 export function usePoll<T>(fn: () => Promise<T>, deps: unknown[], ms = 4000): T | undefined {
   const [v, setV] = useState<T>();
@@ -53,4 +62,11 @@ export function PillPopover(props: {
       {open && <div className={`popover ${props.align === "right" ? "right" : ""}`}>{props.children(() => setOpen(false))}</div>}
     </span>
   );
+}
+
+/** Deterministic two-tone gradient from an address, for avatars. */
+export function avatarStyle(address?: string) {
+  const h = address ? parseInt(address.slice(2, 8), 16) : 0;
+  const a = h % 360, b = (a + 70 + ((h >> 8) % 120)) % 360;
+  return { background: `linear-gradient(135deg, hsl(${a} 80% 70%), hsl(${b} 85% 55%))` };
 }

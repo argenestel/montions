@@ -15,17 +15,18 @@ export function AssetPicker(props: { assets: Asset[]; current: string; onPick: (
     return GROUPS.map((g) => ({ ...g, items: props.assets.filter((a) => (a.tier ?? "") === g.key && match(a)).sort((x, y) => (y.liquid ?? 0) - (x.liquid ?? 0)) })).filter((g) => g.items.length);
   }, [props.assets, q]);
   return (
-    <div style={{ minWidth: 300 }}>
-      <input className="search" autoFocus placeholder={`Search ${props.assets.length} assets…`} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search assets" />
-      <div className="opt-list" style={{ maxHeight: 340 }}>
+    <div>
+      <div className="pop-title">Choose an asset</div>
+      {props.assets.length > 8 && <input className="search" placeholder={`Search ${props.assets.length} assets…`} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search assets" />}
+      <div className="opt-list">
         {groups.length === 0 && <div className="subnote" style={{ padding: 12 }}>No asset matches “{q}”.</div>}
         {groups.map((g) => (
           <div key={g.key || "other"}>
-            <div className="grp">{g.label}</div>
+            {groups.length > 1 && <div className="grp">{g.label}</div>}
             {g.items.map((a) => (
               <button key={a.symbol} className={`opt ${a.symbol === props.current ? "sel" : ""}`} onClick={() => props.onPick(a.symbol)}>
-                <div><div className="l1">{a.symbol}</div><div className="l2">{a.name}{a.liquid ? ` · ${a.liquid} quoted` : ""}</div></div>
-                <span className="mono">{a.stale ? <span className="tag soft" title="Price feed is not updating right now">stale</span> : a.spot ? price(a.spot) : "—"}</span>
+                <div className="l1">{a.symbol}<span className="mono">{a.stale ? "stale" : a.spot ? price(a.spot) : "—"}</span></div>
+                {a.liquid ? <span className="chance">{a.liquid} live</span> : <span className="l2">{a.name}</span>}
               </button>
             ))}
           </div>
