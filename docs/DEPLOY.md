@@ -127,6 +127,7 @@ Keeper flags (structured one-line `component=keeper ...` logs; exit 0 on success
 |---|---|---|
 | `KEEPER_MODE` | `pool` | `pool` = OracleHub.checkpoint + Book.resolve. `pyth` = Hermes update + `PythSettlementResolver.settle` then `Book.resolve`. |
 | `KEEPER_CREATE` | `1` | Create missing canonical series. `0` skips creation. |
+| `KEEPER_CHECKPOINT_WINDOW_SEC` | `180` | Pool mode: `OracleHub.checkpoint` only for assets with an open market expiring within this many seconds of now. `0` disables. The pool holds its last observation's price forward, so continuous checkpoints add nothing; 16 pools every minute measured ~10 MON/hour on testnet. |
 | `KEEPER_REFRESH_LIMIT` | `40` | Max vault `refresh` calls per tick, closest to the money first (`\|fairTick-50\|` from `Quoter.snapshots`). `0` skips. |
 | `KEEPER_INTERVAL_MS` | `15000` | Loop delay (no tight retry loop). |
 | `--once` | | Single tick, then exit. |

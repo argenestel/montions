@@ -4,6 +4,8 @@
 # Gas (Monad bills the gas limit, ~102 gwei): price sync swaps only when a pool drifts >1% from Pyth; the keeper creates the weekly/monthly
 # ladder and resolves markets with positions; the maker re-quotes up to QUOTE_BUDGET markets every 30 min (~0.05 MON per market).
 # The keeper's vault refresh is OFF by default (KEEPER_REFRESH_LIMIT=0): it measured ~0.62 MON per market and at 20/min drained the wallet.
+# Oracle checkpoints are written only for assets with a market expiring within KEEPER_CHECKPOINT_WINDOW_SEC (180) of now: at ~0.01 MON each,
+# checkpointing 16 pools every minute cost ~10 MON/hour and drained the wallet once; the pool holds its last observation forward anyway.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"; S=.dev/testnet-bots; mkdir -p "$S"
 KS="${KEYSTORE:-$ROOT/.dev/keystore/montions-testnet}"; PASS="${PASSFILE:-$ROOT/.dev/testnet.pass}"

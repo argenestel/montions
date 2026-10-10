@@ -69,6 +69,10 @@ interface KeeperConfig {
   refreshLimit: number;
   /** Skip resolving expired markets with no collateral locked (nobody holds a position, so nothing to redeem). Saves most keeper gas. */
   resolveOnlyWithPool: boolean;
+  /** Pool mode: write an oracle observation only for assets with an open market expiring within this many seconds of now (0 disables).
+   *  SpotPool holds the last observation's price forward, so continuous checkpoints add nothing; at ~0.01 MON each, 16 pools every
+   *  minute cost ~10 MON/hour. Price-sync swaps already write observations whenever a pool is re-pegged. */
+  checkpointWindowSec: number;
   intervalMs: number;
   once: boolean;
   dryRun: boolean;
@@ -100,6 +104,7 @@ function loadConfig(): KeeperConfig {
     create: envFlag("KEEPER_CREATE", true),
     refreshLimit: envInt("KEEPER_REFRESH_LIMIT", 40, 0),
     resolveOnlyWithPool: process.env.KEEPER_RESOLVE_ALL !== "1",
+    checkpointWindowSec: envInt("KEEPER_CHECKPOINT_WINDOW_SEC", 180, 0),
     intervalMs: envInt("KEEPER_INTERVAL_MS", 15_000, 250),
     once: hasFlag("--once"),
     dryRun: isDryRun(),
@@ -171,12 +176,21 @@ async function readSpot(clients: KeeperClients, config: KeeperConfig, asset: { s
   );
 }
 
-async function checkpointPools(clients: KeeperClients, config: KeeperConfig): Promise<number> {
-  if (config.mode !== "pool") return 0;
+async function checkpointPools(clients: KeeperClients, config: KeeperConfig, now: bigint, all: readonly OnchainSeries[]): Promise<number> {
+  if (config.mode !== "pool" || config.checkpointWindowSec === 0) return 0;
   const hub = clients.hub;
   if (!hub) throw new Error("KEEPER_MODE=pool requires contracts.oracleHub in the deployment manifest");
+  const window = BigInt(config.checkpointWindowSec);
+  const due = new Set<string>();
+  for (const item of all) {
+    if (item.status !== SERIES_STATUS.Open) continue;
+    if (item.expiry + window < now || item.expiry > now + window) continue;
+    const decoded = decodePriceSeriesData(item.data);
+    if (decoded) due.add(decoded.assetId.toLowerCase());
+  }
   let n = 0;
   for (const asset of clients.context.deployment.assets) {
+    if (!due.has(asset.assetId.toLowerCase())) continue;
     await sendTx(clients, config, `${asset.symbol} oracle checkpoint`, () =>
       clients.context.walletClient!.writeContract({
         address: hub,
@@ -491,11 +505,11 @@ async function refreshVault(
 }
 
 async function tick(clients: KeeperClients, config: KeeperConfig): Promise<void> {
-  const checkpoints = await checkpointPools(clients, config);
   const block = await withRpcRetry(() => clients.context.publicClient.getBlock(), { label: "getBlock" });
   const now = block.timestamp;
-  const created = await createLadder(clients, config, now);
   const all = await readAllSeries(clients.context, clients.book);
+  const checkpoints = await checkpointPools(clients, config, now, all);
+  const created = await createLadder(clients, config, now);
   const resolved = await settleAndResolve(clients, config, now, all);
   const refreshed = await refreshVault(clients, config, now, all);
   logLine("keeper", {
