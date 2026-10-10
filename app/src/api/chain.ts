@@ -243,6 +243,7 @@ export function createChainApi(deployment: Deployment): Api {
       const a = assetBySym.get(sym); if (!a) return [];
       // Progressive: wait only for the FIRST page; keep indexing the rest in the background (the UI polls again in a few seconds).
       if (scanned === 0) { const first = scanNew(); await Promise.race([first, new Promise((r) => setTimeout(r, 4000))]); } else void scanNew();
+      if (scanning && (idsByAsset.get(a.assetId.toLowerCase())?.size ?? 0) === 0) await scanning;   // slow RPC: wait for the first full scan rather than show "no markets"
       await refreshAsset(a.assetId);
       return [...(idsByAsset.get(a.assetId.toLowerCase()) ?? [])].map((id) => toView(snapById.get(id)!)).filter((v): v is SeriesView => !!v);
     },

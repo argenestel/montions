@@ -336,3 +336,119 @@ button, .btn, .cta, .chip { touch-action: manipulation; -webkit-tap-highlight-co
   .kv > div { gap: 10px; }
   .lb .rowcard { padding: 12px 14px; gap: 10px; } .lb .amt { min-width: 52px; }
 }
+
+/* ═════════ LIQUID GLASS ═════════ */
+:root { --spring: cubic-bezier(.34, 1.56, .64, 1); --glass: rgba(255, 255, 255, .55); --glass-edge: rgba(255, 255, 255, .85); }
+
+/* drifting colour blobs under everything; the glass surfaces refract them */
+.bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.bg i { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; filter: blur(70px); opacity: .55; will-change: transform; mix-blend-mode: multiply; animation: drift 38s var(--ease) infinite alternate; }
+.bg i:nth-child(1) { background: var(--amber); left: -10vmax; top: -12vmax; animation-duration: 41s; }
+.bg i:nth-child(2) { background: var(--violet); right: -14vmax; top: 4vmax; animation-duration: 47s; animation-delay: -12s; }
+.bg i:nth-child(3) { background: var(--mint); left: 18vmax; bottom: -22vmax; animation-duration: 53s; animation-delay: -25s; }
+.bg i:nth-child(4) { background: var(--salmon); right: 12vmax; bottom: -16vmax; width: 32vmax; height: 32vmax; animation-duration: 36s; animation-delay: -6s; }
+@keyframes drift { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(9vmax, 6vmax) scale(1.12); } 66% { transform: translate(-6vmax, 10vmax) scale(.94); } 100% { transform: translate(4vmax, -8vmax) scale(1.06); } }
+.app { position: relative; z-index: 1; }
+
+/* glass surfaces: blur + saturate, a bright top edge and a soft specular */
+.glass, .costbox, .popover, .dock, .toast, .sheet .card, .connect, .tag.soft, .rowcard, .stat, .card {
+  background: var(--glass); backdrop-filter: blur(22px) saturate(1.7); -webkit-backdrop-filter: blur(22px) saturate(1.7);
+  border: 1px solid rgba(255, 255, 255, .7);
+  box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 rgba(20, 18, 14, .04), 0 1px 2px rgba(20, 18, 14, .04), 0 18px 50px rgba(20, 18, 14, .09);
+}
+.costbox, .sheet .card, .rowcard, .stat, .card, .tag.soft { position: relative; }
+.popover, .dock, .toast { background: rgba(255, 255, 255, .64); box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 rgba(20, 18, 14, .05), 0 30px 80px rgba(20, 18, 14, .18); }
+.popover::before, .costbox::before, .dock::before, .sheet .card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(120% 80% at 12% 0%, rgba(255, 255, 255, .55), transparent 55%); }
+.balpill, .ink, .opt.sel, .seg button.sel, .dock .ind, .toast.dark { background: rgba(23, 23, 22, .82); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); border: 1px solid rgba(255, 255, 255, .14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), inset 0 -1px 0 rgba(0, 0, 0, .3), 0 14px 40px rgba(20, 18, 14, .22); }
+.balpill { position: relative; overflow: hidden; }
+.balpill::after, .cta::after, .pill::after { content: ""; position: absolute; inset: -40% -60%; pointer-events: none; background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, .45) 50%, transparent 58%); transform: translateX(-70%); transition: transform 0s; }
+.balpill:hover::after, .cta:not([disabled]):hover::after, .pill:hover::after { transform: translateX(70%); transition: transform .9s var(--ease); }
+.pill { position: relative; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), inset 0 -2px 0 rgba(20, 18, 14, .05); transition: transform .55s var(--spring), filter var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
+.pill:hover { filter: none; transform: translateY(-2px) scale(1.02); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 10px 26px rgba(20, 18, 14, .12); }
+.pill:active { transform: scale(.96); }
+.pill.open { transform: scale(1.03); border-color: rgba(23, 23, 22, .9); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 14px 34px rgba(20, 18, 14, .16); }
+.pill small { backdrop-filter: blur(8px); box-shadow: inset 0 1px 0 #fff; }
+/* a value that changed slides up through the pill */
+.pv { display: inline-block; animation: valueIn .55s var(--spring) both; }
+@keyframes valueIn { from { opacity: 0; transform: translateY(.35em) scale(.9); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+/* sentence words cascade in on load */
+.sentence > * { animation: wordIn .9s var(--spring) backwards; }
+.sentence > *:nth-child(1) { animation-delay: .02s; } .sentence > *:nth-child(2) { animation-delay: .08s; } .sentence > *:nth-child(3) { animation-delay: .14s; } .sentence > *:nth-child(4) { animation-delay: .2s; } .sentence > *:nth-child(5) { animation-delay: .26s; } .sentence > *:nth-child(6) { animation-delay: .32s; } .sentence > *:nth-child(7) { animation-delay: .38s; } .sentence > *:nth-child(8) { animation-delay: .44s; } .sentence > *:nth-child(9) { animation-delay: .5s; }
+@keyframes wordIn { from { opacity: 0; transform: translateY(18px) scale(.94); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
+.eyebrow, .costline, .trade > .subnote { animation: wordIn .9s var(--spring) both; }
+.costline { animation-delay: .5s; } .trade > .subnote { animation-delay: .6s; }
+
+/* popovers morph in like a drop of glass */
+.popover { animation: glassIn .5s var(--spring) both; transform-origin: 28px -10px; }
+.popover.right { transform-origin: calc(100% - 28px) -10px; }
+@keyframes glassIn { from { opacity: 0; transform: translateY(14px) scale(.86); filter: blur(10px); } 60% { filter: blur(0); } to { opacity: 1; transform: none; } }
+.opt { transition: background var(--t-fast) var(--ease), transform .45s var(--spring); }
+.opt:hover { transform: translateX(3px); }
+.opt.sel { transform: none; }
+
+/* sliders: glass thumb that swells while dragging; the fill shimmers */
+.range { background-size: 100% 100%; box-shadow: inset 0 1px 2px rgba(20, 18, 14, .08), inset 0 0 0 1px rgba(255, 255, 255, .6); transition: box-shadow var(--t-fast) var(--ease); }
+.range::-webkit-slider-thumb { transition: transform .45s var(--spring), box-shadow var(--t-fast) var(--ease); box-shadow: 0 2px 10px rgba(20, 18, 14, .2), inset 0 1px 0 #fff, inset 0 -1px 0 rgba(20, 18, 14, .06); }
+.range:active::-webkit-slider-thumb, .range:focus-visible::-webkit-slider-thumb { transform: scale(1.14); box-shadow: 0 8px 24px rgba(20, 18, 14, .26), inset 0 1px 0 #fff; }
+.range-chip { transition: left .2s var(--ease), transform .45s var(--spring); }
+.range:active ~ .range-chip { transform: translateX(-50%) scale(1.08) translateY(-3px); }
+
+/* dock: a dark blob slides between tabs; the buy button has a cursor-following light */
+.dock { padding-left: 6px; }
+.dock .ind { position: absolute; left: 6px; top: 6px; width: 44px; height: 44px; border-radius: 50%; transform: translateX(calc(var(--i, 0) * 46px)); transition: transform .6s var(--spring); z-index: 0; }
+.dock .tab { position: relative; z-index: 1; transition: color .25s var(--ease), transform .45s var(--spring); }
+.dock .tab.sel { background: transparent; color: #fff; }
+.dock .tab:hover { background: transparent; transform: translateY(-2px) scale(1.08); }
+.dock .tab:active { transform: scale(.92); }
+.dock .act { position: relative; z-index: 1; }
+.cta { position: relative; overflow: hidden; transition: transform .5s var(--spring), background var(--t-fast) var(--ease), box-shadow var(--t-med) var(--ease); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 10px 30px rgba(20, 18, 14, .22); }
+.cta:not([disabled]):hover { transform: translateY(-2px) scale(1.02); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 18px 44px rgba(20, 18, 14, .28); }
+.cta:not([disabled]):active { transform: scale(.97); }
+.cta:not([disabled])::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(140px 140px at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .28), transparent 60%); opacity: 0; transition: opacity .3s; }
+.cta:not([disabled]):hover::before { opacity: 1; }
+.cta .arr { transition: transform .45s var(--spring); }
+.cta:not([disabled]):hover .arr { transform: translateX(4px); }
+.dock .tab.sel.pulse { animation: tabPulse .6s var(--spring); }
+@keyframes tabPulse { 40% { transform: scale(1.18); } }
+.dock { transition: transform .6s var(--spring); }
+.dock.lift { transform: translateX(-50%) translateY(-6px); }
+
+/* sheets: scrim melts in, cards and rows stagger */
+.scrim { backdrop-filter: blur(14px) saturate(1.3); -webkit-backdrop-filter: blur(14px) saturate(1.3); animation: scrimIn .5s var(--ease) both; }
+@keyframes scrimIn { from { opacity: 0; backdrop-filter: blur(0); } }
+.sheet { animation: none; }
+.sheet .card { animation: glassIn .65s var(--spring) both; transform-origin: 50% 100%; }
+.sheet .card:nth-child(2) { animation-delay: .08s; }
+.outcome, .kv > div { animation: rowUp .6s var(--spring) both; }
+.outcome:nth-child(1), .kv > div:nth-child(1) { animation-delay: .18s; } .outcome:nth-child(2), .kv > div:nth-child(2) { animation-delay: .24s; } .outcome:nth-child(3), .kv > div:nth-child(3) { animation-delay: .3s; }
+.kv > div:nth-child(4) { animation-delay: .34s; } .kv > div:nth-child(5) { animation-delay: .38s; } .kv > div:nth-child(6) { animation-delay: .42s; } .kv > div:nth-child(7) { animation-delay: .46s; } .kv > div:nth-child(8) { animation-delay: .5s; }
+@keyframes rowUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.outcome { transition: transform .45s var(--spring), box-shadow var(--t-med) var(--ease); }
+.outcome:hover { transform: translateX(4px) scale(1.01); box-shadow: 0 8px 22px rgba(20, 18, 14, .08); }
+.chart .bar { transition: y .5s var(--spring), height .5s var(--spring), opacity 160ms var(--ease); }
+.check input { transition: transform .4s var(--spring); } .check input:checked { transform: scale(1.15); }
+
+/* success: the check draws, then pastel drops burst */
+.burst { position: relative; height: 0; }
+.burst i { position: absolute; left: 50%; top: 0; width: 10px; height: 10px; border-radius: 50%; opacity: 0; animation: burst 1.1s var(--ease) .35s both; --a: 0deg; --d: 90px; }
+.burst i:nth-child(odd) { border-radius: 3px; }
+.burst i:nth-child(4n+1) { background: var(--amber); } .burst i:nth-child(4n+2) { background: var(--violet); } .burst i:nth-child(4n+3) { background: var(--mint); } .burst i:nth-child(4n) { background: var(--salmon); }
+@keyframes burst { 0% { opacity: 1; transform: translate(-50%, 0) rotate(0) scale(.4); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(calc(-50% + cos(var(--a)) * var(--d)), calc(sin(var(--a)) * var(--d) + 40px)) rotate(400deg) scale(1); } }
+.success .big { animation: valueIn .7s var(--spring) .25s both; }
+
+/* number tween gets a soft glow while it moves */
+.costbox .val { transition: text-shadow .3s; }
+.costbox.moving .val { text-shadow: 0 0 18px rgba(247, 220, 159, .9); }
+.tag { animation: wordIn .8s var(--spring) backwards; }
+.toplink { transition: transform .45s var(--spring), background var(--t-fast); } .toplink:hover { transform: translateY(-1px); }
+.btn { transition: transform .45s var(--spring), background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); } .btn:hover { transform: translateY(-1px); } .btn:active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) { .bg i { animation: none; } }
+@media (max-width: 720px) { .dock .ind { width: 40px; height: 40px; transform: translateX(calc(var(--i, 0) * 42px)); } .dock.lift { transform: translateY(-6px); } }
+
+/* top drawers (connect / account) */
+.scrim:has(> .drawer) { align-items: start; padding: 0; }
+.drawer { width: min(480px, 100%); border-radius: 0 0 30px 30px; border-top: 0; padding: calc(22px + env(safe-area-inset-top)) 22px 22px; animation: drawerDown .65s var(--spring) both; transform-origin: 50% 0; box-shadow: inset 0 -1px 0 var(--glass-edge), 0 30px 80px rgba(20, 18, 14, .2); }
+@keyframes drawerDown { from { opacity: 0; transform: translateY(-40%) scaleY(.9); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+.drawer .rows > * { animation: rowUp .55s var(--spring) both; }
+.drawer .rows > :nth-child(1) { animation-delay: .12s; } .drawer .rows > :nth-child(2) { animation-delay: .18s; } .drawer .rows > :nth-child(3) { animation-delay: .24s; } .drawer .rows > :nth-child(4) { animation-delay: .3s; } .drawer .rows > :nth-child(5) { animation-delay: .36s; }
+@media (max-width: 720px) { .scrim:has(> .drawer) { place-items: start center; } .drawer { border-radius: 0 0 28px 28px; max-height: 92dvh; overflow: auto; } }

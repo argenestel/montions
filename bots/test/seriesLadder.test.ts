@@ -94,6 +94,16 @@ describe("canonical UTC expiries", () => {
     expect(nextCanonicalExpiries(unix(2026, 10, 10, 11, 0, 0), "1M", 2)).toEqual([unix(2026, 10, 30, 8, 0, 0), unix(2026, 11, 27, 8, 0, 0)]);
   });
 
+  it("1Q is the farthest last-Friday 08:00 UTC within 90 days", () => {
+    // 2026-10-10 + 90d = 2027-01-08: Nov 27 and Dec 25 fit, Jan 29 does not.
+    expect(nextCanonicalExpiry(unix(2026, 10, 10, 11, 0, 0), "1Q")).toBe(unix(2026, 12, 25, 8, 0, 0));
+    // 2026-11-01 + 90d = 2027-01-30: Jan 29 08:00 now fits.
+    expect(nextCanonicalExpiry(unix(2026, 11, 1, 0, 0, 0), "1Q")).toBe(unix(2027, 1, 29, 8, 0, 0));
+    const plan = planSeriesLadder(unix(2026, 10, 10, 11, 0, 0), [{ symbol: "BTC", assetId: `0x${"1".repeat(64)}`, spotWad: 83_000n * 10n ** 18n, tier: "crypto" }]);
+    expect(plan.length).toBe(9);
+    expect(new Set(plan.map((x) => x.bucket))).toEqual(new Set(["7d", "1M", "1Q"]));
+  });
+
   it("aligns 7d to Fridays 08:00 UTC, including the first Friday after the Unix epoch", () => {
     expect(FIRST_FRIDAY_08_UTC_SECONDS).toBe(86400n + 8n * 3600n);
     expect(nextCanonicalExpiry(0n, "7d")).toBe(FIRST_FRIDAY_08_UTC_SECONDS);

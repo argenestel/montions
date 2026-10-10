@@ -43,6 +43,8 @@ import {
   POOL_SERIES_WINDOW_SECONDS,
   PYTH_SERIES_MAX_DELAY_SECONDS,
   planSeriesLadder,
+  TIER_PROFILES,
+  type AssetTier,
   type LadderAsset,
 } from "./seriesLadder.js";
 
@@ -202,7 +204,7 @@ async function createLadder(clients: KeeperClients, config: KeeperConfig, now: b
     assets.push({
       symbol: asset.symbol,
       assetId: asset.assetId,
-      ...(asset.tier === "major" || asset.tier === "alt" || asset.tier === "wrapped" ? { tier: asset.tier } : {}),
+      ...(asset.tier && asset.tier in TIER_PROFILES ? { tier: asset.tier as AssetTier } : {}),
       spotWad: await readSpot(clients, config, asset),
     });
   }

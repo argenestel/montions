@@ -12,6 +12,7 @@
  *   3d   00:00 UTC every third Unix epoch day (day index % 3 == 0)
  *   7d   Fridays 08:00 UTC
  *   1M   last Friday of the month, 08:00 UTC (opt-in via tier profiles; not in the default ladder)
+ *   1Q   the farthest last-Friday 08:00 UTC that is still within the Book's 90-day maximum (rolls forward monthly)
  *
  * Strikes: per-asset relative grid × a reference price rounded to 2 significant
  * digits, then each strike snapped to 3 significant digits. MON is 0.0005-grade
@@ -25,7 +26,7 @@ export const POOL_SERIES_WINDOW_SECONDS = 60;
 export const PYTH_SERIES_MAX_DELAY_SECONDS = 300;
 
 export const LADDER_BUCKETS = ["15m", "1h", "4h", "1d", "3d", "7d"] as const;
-export type LadderBucketId = (typeof LADDER_BUCKETS)[number] | "1M";
+export type LadderBucketId = (typeof LADDER_BUCKETS)[number] | "1M" | "1Q";
 
 /** Relative moneyness vs the quantized reference, in basis points. */
 export const RELATIVE_STRIKE_MULTIPLIERS_BPS = [
@@ -80,8 +81,8 @@ export const TIER_PROFILES: Readonly<Record<AssetTier, { buckets: readonly Ladde
   wrapped: { buckets: ["1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 9_500, 10_000, 10_500, 11_000] },
   // Light ladders (weekly + monthly x 3 strikes = 6 markets per asset): every market costs gas to create and to quote,
   // and longer expiries stay open for weeks instead of being recreated every day.
-  stock: { buckets: ["7d", "1M"], expiriesPerBucket: 1, strikeMultipliersBps: [9_500, 10_000, 10_500] },
-  crypto: { buckets: ["7d", "1M"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 10_000, 11_000] },
+  stock: { buckets: ["7d", "1M", "1Q"], expiriesPerBucket: 1, strikeMultipliersBps: [9_500, 10_000, 10_500] },
+  crypto: { buckets: ["7d", "1M", "1Q"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 10_000, 11_000] },
 };
 
 export interface PlannedSeries {
@@ -183,6 +184,13 @@ export function nextCanonicalExpiry(timestampSeconds: bigint, bucket: LadderBuck
       if (timestampSeconds < 0n) throw new RangeError("timestamp must be non-negative");
       const thisMonth = lastFridayOfMonth(timestampSeconds);
       return thisMonth > timestampSeconds ? thisMonth : lastFridayOfMonth(thisMonth + 7n * DAY);
+    }
+    case "1Q": {
+      // Walk month-ends forward and keep the last one that still fits (one hour of margin so a batch sent late still passes MAX_DURATION).
+      const limit = timestampSeconds + MAX_DURATION_SECONDS - HOUR;
+      let best = nextCanonicalExpiry(timestampSeconds, "1M");
+      for (let m = lastFridayOfMonth(best + 7n * DAY); m <= limit; m = lastFridayOfMonth(m + 7n * DAY)) best = m;
+      return best;
     }
     default: {
       const exhaustive: never = bucket;

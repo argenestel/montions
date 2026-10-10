@@ -111,7 +111,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
 
       <h1 className="sentence">
         <span className="w">I want to make </span>
-        <PillPopover pill={(o, t) => <button className={`pill amber ${o ? "open" : ""}`} onClick={t}>{usd(payout)}<Chev /></button>}>
+        <PillPopover pill={(o, t) => <button className={`pill amber ${o ? "open" : ""}`} onClick={t}><span className="pv" key={payout}>{usd(payout)}</span><Chev /></button>}>
           {() => (
             <div>
               <div className="pop-title">How much do you want to make?</div>
@@ -128,10 +128,10 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
           )}
         </PillPopover>
         <span className="w"> if </span>
-        <PillPopover pill={(o, t) => <button className={`pill violet ${o ? "open" : ""}`} onClick={t}>{sym}<Chev /></button>}>
+        <PillPopover pill={(o, t) => <button className={`pill violet ${o ? "open" : ""}`} onClick={t}><span className="pv" key={sym}>{sym}</span><Chev /></button>}>
           {(close) => <AssetPicker assets={assets ?? []} current={sym} onPick={(symbol) => { picked.current = true; setSym(symbol); setStrike(undefined); setExpiry(undefined); close(); }} />}
         </PillPopover>{" "}
-        <PillPopover pill={(o, t) => <button className={`pill salmon ${o ? "open" : ""}`} onClick={t}>{above ? "hits" : "stays under"}<span className="arrow">{above ? "↗" : "↘"}</span></button>}>
+        <PillPopover pill={(o, t) => <button className={`pill salmon ${o ? "open" : ""}`} onClick={t}><span className="pv" key={String(above)}>{above ? "hits" : "stays under"}</span><span className="arrow">{above ? "↗" : "↘"}</span></button>}>
           {(close) => (
             <div>
               <div className="pop-title">Finishes</div>
@@ -142,7 +142,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
             </div>
           )}
         </PillPopover>{" "}
-        <PillPopover pill={(o, t) => strike ? <button className={`pill yes ${o ? "open" : ""}`} onClick={t}>{price(strike)}<small className={strikePct < 0 ? "down" : ""}>{signed(strikePct)}</small><Chev /></button> : none ? <button className="pill yes" onClick={t}>—</button> : <button className="pill yes loading" aria-busy="true"><Skel w="2.6em" h=".62em" r={999} /></button>}>
+        <PillPopover pill={(o, t) => strike ? <button className={`pill yes ${o ? "open" : ""}`} onClick={t}><span className="pv" key={strike}>{price(strike)}</span><small className={strikePct < 0 ? "down" : ""}>{signed(strikePct)}</small><Chev /></button> : none ? <button className="pill yes" onClick={t}>—</button> : <button className="pill yes loading" aria-busy="true"><Skel w="2.6em" h=".62em" r={999} /></button>}>
           {() => (
             <div>
               <div className="pop-title">{sym} reference price {price(spot)}</div>
@@ -163,7 +163,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
           )}
         </PillPopover>
         <span className="w"> by </span>
-        <PillPopover align="right" pill={(o, t) => expiry ? <button className={`pill blue ${o ? "open" : ""}`} onClick={t}>{dayText(expiry, now)}<Chev /></button> : none ? <button className="pill blue" onClick={t}>—</button> : <button className="pill blue loading" aria-busy="true"><Skel w="4.6em" h=".62em" r={999} /></button>}>
+        <PillPopover align="right" pill={(o, t) => expiry ? <button className={`pill blue ${o ? "open" : ""}`} onClick={t}><span className="pv" key={expiry}>{dayText(expiry, now)}</span><Chev /></button> : none ? <button className="pill blue" onClick={t}>—</button> : <button className="pill blue loading" aria-busy="true"><Skel w="4.6em" h=".62em" r={999} /></button>}>
           {(close) => (
             <div>
               <div className="pop-title">Expires</div>

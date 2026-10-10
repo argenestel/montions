@@ -89,6 +89,7 @@ export default function App() {
       <ApiCtx.Provider value={api}>
       <CollateralCtx.Provider value={info?.collateralSymbol ?? "USDC"}>
       <DockCtx.Provider value={setDockAction}>
+        <div className="bg" aria-hidden="true"><i /><i /><i /><i /></div>
         <div className="app">
           <Header info={info} account={account} walletKind={wallet?.kind} onAccount={() => setAccountOpen(true)} onConnect={connect} onFaucet={async () => { try { await api.faucet(); await refresh(); } catch (e) { say(explain(e)); } }} />
           <Banners info={info} wallet={wallet} account={account} health={health} onSwitch={switchNet} onRetry={() => { setHealth({ failing: false }); refresh(); }} />
@@ -100,12 +101,13 @@ export default function App() {
               {tab === "leaders" && <LeaderboardView account={account} info={info} />}
             </main>
           </RiskGate>
-          <nav className="dock" aria-label="Primary">
+          <nav className="dock" aria-label="Primary" style={{ "--i": TABS.findIndex((t) => t.id === tab) } as React.CSSProperties}>
+            <span className="ind" aria-hidden="true" />
             {TABS.map((t) => (
               <button key={t.id} className={`tab ${tab === t.id ? "sel" : ""}`} title={t.label} aria-label={t.label} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>{t.icon}</button>
             ))}
             {tab === "trade" && dockAction && (
-              <span className="act"><button className="cta" disabled={dockAction.disabled} onClick={dockAction.onClick}>{dockAction.label.replace(/ (\S+)$/, "")} <b>{dockAction.label.split(" ").pop()}</b><span className="arr">→</span></button></span>
+              <span className="act"><button className="cta" disabled={dockAction.disabled} onClick={dockAction.onClick} onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`); e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`); }}>{dockAction.label.replace(/ (\S+)$/, "")} <b>{dockAction.label.split(" ").pop()}</b><span className="arr">→</span></button></span>
             )}
           </nav>
           {accountOpen && <AccountSheet account={account} symbol={info?.collateralSymbol ?? "USDC"} onFaucet={info?.faucet !== false && info?.network !== "mainnet" ? async () => { await api.faucet(); await refresh(); } : undefined} onChanged={refresh} onDisconnect={disconnect} onClose={() => setAccountOpen(false)} />}

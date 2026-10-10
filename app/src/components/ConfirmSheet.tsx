@@ -94,6 +94,7 @@ export function ConfirmSheet(props: {
             </>
           ) : res.ok ? (
             <div className="success">
+              <div className="burst" aria-hidden="true">{Array.from({ length: 16 }).map((_, i) => <i key={i} style={{ "--a": `${i * 22.5}deg`, "--d": `${70 + (i % 3) * 30}px` } as React.CSSProperties} />)}</div>
               <svg className="check-draw" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" /><path d="M19 33l9 9 17-19" /></svg>
               <div className="subnote">Filled</div>
               <div className="big">{res.filled.toLocaleString()} contracts</div>

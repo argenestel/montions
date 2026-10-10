@@ -30,7 +30,7 @@ export function ConnectSheet(props: { options: ConnectKind[]; wallets: { id: str
   const noWallet = props.wallets.length === 0;
   return createPortal(
     <div className="scrim" role="dialog" aria-modal="true" aria-label="Connect" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) props.onClose(); }} onKeyDown={(e) => { if (e.key === "Escape" && !busy) props.onClose(); }}>
-      <div className="card connect">
+      <div className="card connect drawer">
         <h1 className="page-title" style={{ fontSize: 26 }}>Connect</h1>
         <div className="rows">
           {rows.map((r) => (
