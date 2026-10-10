@@ -196,7 +196,9 @@ export async function selectMissingSeries(
     if (seen.has(key)) continue;
     seen.add(key);
     const status = await seriesStatus(context, book, item.id);
-    if (status === null || status === SERIES_STATUS.None) missing.push(item);
+    // A failed read is "unknown", not "missing": creating a series that already exists reverts the whole multicall batch.
+    if (status === null) { logLine("series", { event: "status_unknown", id: item.id }); continue; }
+    if (status === SERIES_STATUS.None) missing.push(item);
   }
   return missing;
 }
