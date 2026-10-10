@@ -20,7 +20,7 @@ echo "▶ 1/6 pools onto live Pyth prices";   ( cd bots && for i in $(seq 1 10);
 echo "▶ 2/6 crypto";                         scripts/testnet-add-assets.sh crypto 14
 echo "▶ 3/6 stocks";                         scripts/testnet-add-assets.sh stocks 12
 echo "▶ 4/6 sync new pools";                 ( cd bots && DEPLOYMENT="$M" BOT_PRIVATE_KEY="$KEY" pnpm exec tsx src/price-sync.ts --once | grep -cE "synced" || true )
-echo "▶ 5/6 vault quotes the markets";       ( cd bots && DEPLOYMENT="$M" BOT_PRIVATE_KEY="$KEY" REFRESH_BUDGET=80 pnpm exec tsx src/refresh.ts | grep -E "plan|done" || true )
+echo "▶ 5/6 maker quotes the markets";       ( cd bots && DEPLOYMENT="$M" BOT_PRIVATE_KEY="$KEY" QUOTE_BUDGET=40 pnpm exec tsx src/quote.ts | grep -E "plan|done" || true )
 echo "▶ 6/6 trading activity + bots";        scripts/testnet-activity.sh 30 || true; scripts/testnet-bots.sh start
 git -C "$ROOT" status --short app/public/deployment.testnet.json
 echo "✔ launched. Commit app/public/deployment.testnet.json and redeploy the site (vercel deploy --prod)."

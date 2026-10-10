@@ -35,9 +35,9 @@ const num = (name: string, fallback: number) => { const v = Number(process.env[n
 export function isqrt(n: bigint): bigint {
   if (n < 0n) throw new RangeError("negative");
   if (n < 2n) return n;
-  let x = BigInt(Math.floor(Math.sqrt(Number(n))));
-  while (x * x > n) x = (x + n / x) >> 1n;
-  while ((x + 1n) * (x + 1n) <= n) x += 1n;
+  // Newton from an overestimate decreases monotonically to floor(sqrt(n)); a float seed alone can be off by ~1e14 at 1e60.
+  let x = 1n << BigInt((n.toString(2).length >> 1) + 1);
+  for (let y = (x + n / x) >> 1n; y < x; y = (x + n / x) >> 1n) x = y;
   return x;
 }
 

@@ -11,6 +11,7 @@
  *   1d   00:00 UTC
  *   3d   00:00 UTC every third Unix epoch day (day index % 3 == 0)
  *   7d   Fridays 08:00 UTC
+ *   1M   last Friday of the month, 08:00 UTC (opt-in via tier profiles; not in the default ladder)
  *
  * Strikes: per-asset relative grid × a reference price rounded to 2 significant
  * digits, then each strike snapped to 3 significant digits. MON is 0.0005-grade
@@ -24,7 +25,7 @@ export const POOL_SERIES_WINDOW_SECONDS = 60;
 export const PYTH_SERIES_MAX_DELAY_SECONDS = 300;
 
 export const LADDER_BUCKETS = ["15m", "1h", "4h", "1d", "3d", "7d"] as const;
-export type LadderBucketId = (typeof LADDER_BUCKETS)[number];
+export type LadderBucketId = (typeof LADDER_BUCKETS)[number] | "1M";
 
 /** Relative moneyness vs the quantized reference, in basis points. */
 export const RELATIVE_STRIKE_MULTIPLIERS_BPS = [
@@ -77,9 +78,10 @@ export const TIER_PROFILES: Readonly<Record<AssetTier, { buckets: readonly Ladde
   major: { buckets: ["15m", "1h", "4h", "1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: RELATIVE_STRIKE_MULTIPLIERS_BPS },
   alt: { buckets: ["4h", "1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 9_500, 10_000, 10_500, 11_000] },
   wrapped: { buckets: ["1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 9_500, 10_000, 10_500, 11_000] },
-  // Demo stocks: a light ladder (2 expiries x 5 strikes = 10 markets per asset) because every market costs gas to create and to quote.
-  stock: { buckets: ["1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_500, 9_750, 10_000, 10_250, 10_500] },
-  crypto: { buckets: ["1d", "7d"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 9_500, 10_000, 10_500, 11_000] },
+  // Light ladders (weekly + monthly x 3 strikes = 6 markets per asset): every market costs gas to create and to quote,
+  // and longer expiries stay open for weeks instead of being recreated every day.
+  stock: { buckets: ["7d", "1M"], expiriesPerBucket: 1, strikeMultipliersBps: [9_500, 10_000, 10_500] },
+  crypto: { buckets: ["7d", "1M"], expiriesPerBucket: 1, strikeMultipliersBps: [9_000, 10_000, 11_000] },
 };
 
 export interface PlannedSeries {
@@ -154,6 +156,14 @@ function nextStrictlyAfter(timestamp: bigint, period: bigint, offset: bigint): b
   return timestamp + (period - rem);
 }
 
+/** Last Friday 08:00 UTC of the month containing `timestampSeconds`. */
+function lastFridayOfMonth(timestampSeconds: bigint): bigint {
+  const d = new Date(Number(timestampSeconds) * 1000);
+  const end = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0);   // last day of the month, 00:00 UTC
+  const back = (new Date(end).getUTCDay() - 5 + 7) % 7;               // days back to Friday
+  return BigInt(end / 1000) - BigInt(back) * DAY + 8n * HOUR;
+}
+
 /** First canonical expiry for `bucket` strictly after `timestampSeconds` (UTC unix). */
 export function nextCanonicalExpiry(timestampSeconds: bigint, bucket: LadderBucketId): bigint {
   switch (bucket) {
@@ -169,6 +179,11 @@ export function nextCanonicalExpiry(timestampSeconds: bigint, bucket: LadderBuck
       return nextStrictlyAfter(timestampSeconds, THREE_DAY_PERIOD_SECONDS, UNIX_EPOCH_SECONDS);
     case "7d":
       return nextStrictlyAfter(timestampSeconds, WEEK, FIRST_FRIDAY_08_UTC_SECONDS);
+    case "1M": {
+      if (timestampSeconds < 0n) throw new RangeError("timestamp must be non-negative");
+      const thisMonth = lastFridayOfMonth(timestampSeconds);
+      return thisMonth > timestampSeconds ? thisMonth : lastFridayOfMonth(thisMonth + 7n * DAY);
+    }
     default: {
       const exhaustive: never = bucket;
       throw new RangeError(`unknown ladder bucket: ${String(exhaustive)}`);

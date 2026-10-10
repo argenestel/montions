@@ -39,6 +39,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
 
   const open = useMemo(() => (series ?? []).filter((s) => s.status === "open" && s.expiry > now + 60), [series, Math.floor(now / 30)]);
   const expiries = useMemo(() => [...new Set(open.map((s) => s.expiry))].sort((a, b) => a - b), [open]);
+  const none = series !== undefined && open.length === 0;   // loaded, but nothing open for this asset
 
   // default selections once data arrives / asset changes
   useEffect(() => {
@@ -123,7 +124,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
               </div>
             )}
           </PillPopover>{" "}
-          <PillPopover pill={(o, t) => strike ? <button className={`pill yes ${o ? "open" : ""}`} onClick={t}>{price(strike)}<small>{strikePct >= 0 ? "↑" : "↓"}{Math.abs(strikePct * 100).toFixed(0)}%</small><span className="chev">▾</span></button> : <button className="pill yes loading" aria-busy="true"><Skel w="2.6em" h=".62em" r={999} /></button>}>
+          <PillPopover pill={(o, t) => strike ? <button className={`pill yes ${o ? "open" : ""}`} onClick={t}>{price(strike)}<small>{strikePct >= 0 ? "↑" : "↓"}{Math.abs(strikePct * 100).toFixed(0)}%</small><span className="chev">▾</span></button> : none ? <button className="pill yes" onClick={t}>—</button> : <button className="pill yes loading" aria-busy="true"><Skel w="2.6em" h=".62em" r={999} /></button>}>
             {(close) => (
               <div>
                 <div className="pop-title">Price · now {price(spot)}</div>
@@ -139,7 +140,7 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
             )}
           </PillPopover>
           <span className="w"> by </span>
-          <PillPopover align="right" pill={(o, t) => expiry ? <button className={`pill blue ${o ? "open" : ""}`} onClick={t}>{whenText(expiry).replace(/,/g, "")}<span className="chev">▾</span></button> : <button className="pill blue loading" aria-busy="true"><Skel w="4.6em" h=".62em" r={999} /></button>}>
+          <PillPopover align="right" pill={(o, t) => expiry ? <button className={`pill blue ${o ? "open" : ""}`} onClick={t}>{whenText(expiry).replace(/,/g, "")}<span className="chev">▾</span></button> : none ? <button className="pill blue" onClick={t}>—</button> : <button className="pill blue loading" aria-busy="true"><Skel w="4.6em" h=".62em" r={999} /></button>}>
             {(close) => (
               <div>
                 <div className="pop-title">Expires</div>
@@ -160,11 +161,11 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
         </h1>
 
         <div className="costline">
-          <div className="costbox"><span className="lbl">It costs</span><span className="val">{selected && quote ? <Num value={cost} format={(n) => usd(n, n < 100 ? 2 : 0)} /> : <Skel w={104} h={30} r={10} />}</span></div>
-          <div className="chancebox"><b>{selected ? <Num value={chance * 100} format={(n) => `${Math.round(n)}%`} /> : <Skel w={34} h={14} />}</b> chance</div>
+          <div className="costbox"><span className="lbl">It costs</span><span className="val">{none ? "—" : selected && quote ? <Num value={cost} format={(n) => usd(n, n < 100 ? 2 : 0)} /> : <Skel w={104} h={30} r={10} />}</span></div>
+          <div className="chancebox"><b>{none ? "—" : selected ? <Num value={chance * 100} format={(n) => `${Math.round(n)}%`} /> : <Skel w={34} h={14} />}</b> chance</div>
         </div>
         <div className="subnote">
-          {!quote ? "Reading the book…" : quote.filled > 0 ? <>Win <b className="pos">{usd(profit)}</b> · lose <b className="neg">{usd(cost)}</b></> : "No orders here — try another strike or time."}
+          {none ? `No open ${sym} markets right now. New ones list every day; try another asset.` : !quote ? "Reading the book…" : quote.filled > 0 ? <>Win <b className="pos">{usd(profit)}</b> · lose <b className="neg">{usd(cost)}</b></> : "No orders here — try another strike or time."}
         </div>
         {quote && quote.filled > 0 && !quote.complete && <div className="warnline" style={{ marginTop: 6 }}>Only {quote.filled.toLocaleString()} of {contracts.toLocaleString()} available — lower the amount.</div>}
 
@@ -186,14 +187,14 @@ export function TradeView(props: { account?: AccountView; wallet?: WalletState; 
 
         <div className="chartwrap card">
           <h3>Profit / loss</h3>
-          {selected && quote ? <PayoffChart strike={selected.strike} spot={spot} payout={payout} cost={cost} yes={above} /> : <Skel w="100%" h={210} r={14} />}
+          {none ? <div className="subnote">Pick a market to see its payoff.</div> : selected && quote ? <PayoffChart strike={selected.strike} spot={spot} payout={payout} cost={cost} yes={above} /> : <Skel w="100%" h={210} r={14} />}
         </div>
       </section>
 
       <aside>
         <div className="card">
           <h3>Orderbook</h3>
-          {depth ? <BookLadder bids={depth.bids} asks={depth.asks} fairTick={selected ? Math.round(selected.fairProb * 100) : undefined} lastTick={selected?.lastTick}
+          {none ? <div className="subnote">No book yet.</div> : depth ? <BookLadder bids={depth.bids} asks={depth.asks} fairTick={selected ? Math.round(selected.fairProb * 100) : undefined} lastTick={selected?.lastTick}
             highlight={above && quote?.worstTick ? { side: "ask", worst: quote.worstTick } : undefined} /> : <BookSkeleton />}
         </div>
         <div className="card">

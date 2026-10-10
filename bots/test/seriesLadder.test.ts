@@ -87,6 +87,13 @@ describe("canonical UTC expiries", () => {
     ]);
   });
 
+  it("aligns 1M to the last Friday of the month 08:00 UTC", () => {
+    expect(nextCanonicalExpiry(unix(2026, 10, 10, 11, 0, 0), "1M")).toBe(unix(2026, 10, 30, 8, 0, 0));
+    expect(nextCanonicalExpiry(unix(2026, 10, 30, 8, 0, 0), "1M")).toBe(unix(2026, 11, 27, 8, 0, 0));
+    expect(nextCanonicalExpiry(unix(2026, 12, 26, 0, 0, 0), "1M")).toBe(unix(2027, 1, 29, 8, 0, 0));
+    expect(nextCanonicalExpiries(unix(2026, 10, 10, 11, 0, 0), "1M", 2)).toEqual([unix(2026, 10, 30, 8, 0, 0), unix(2026, 11, 27, 8, 0, 0)]);
+  });
+
   it("aligns 7d to Fridays 08:00 UTC, including the first Friday after the Unix epoch", () => {
     expect(FIRST_FRIDAY_08_UTC_SECONDS).toBe(86400n + 8n * 3600n);
     expect(nextCanonicalExpiry(0n, "7d")).toBe(FIRST_FRIDAY_08_UTC_SECONDS);

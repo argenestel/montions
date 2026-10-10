@@ -153,7 +153,7 @@ For local Anvil, substitute `deployments/31337.json`. The helper creates the out
 
 ## Testnet: demo stocks and ETFs
 
-`scripts/testnet-add-assets.sh stocks [count] [--dry]` adds demo stock/ETF assets (list in `config/stocks-demo.json`, 30 symbols) to the Monad **testnet** deployment: a mintable token and TWAP pool per symbol, hub and resolver registration (`script/AddStocks.s.sol`), then a light ladder of 10 markets per stock (`tier: "stock"`: 2 expiries × 5 strikes). Prices and volatilities are **approximate demo levels, not live quotes**: Pyth does list real equity feeds, but they are not pushed on Monad, so a real stock market would need a Hermes key and a push bot. The script refuses mainnet.
+`scripts/testnet-add-assets.sh stocks [count] [--dry]` adds demo stock/ETF assets (list in `config/stocks-demo.json`, 30 symbols) to the Monad **testnet** deployment: a mintable token and TWAP pool per symbol, hub and resolver registration (`script/AddStocks.s.sol`), then a light ladder of 6 markets per asset (`tier: "stock"` / `"crypto"`: weekly Friday 08:00 UTC + monthly last-Friday 08:00 UTC × 3 strikes, so markets stay open for weeks). Prices and volatilities are **approximate demo levels, not live quotes**: Pyth does list real equity feeds, but they are not pushed on Monad, so a real stock market would need a Hermes key and a push bot. The script refuses mainnet.
 
 Cost on testnet (gas is billed on the gas limit, about 102 gwei): roughly 0.31 MON per stock for the pool, about 0.3 MON for its markets, and about 0.11 MON for the vault to quote them. Twelve stocks need about 9 MON. The script prints the estimate, checks the balance and resumes if rerun. Afterwards run `scripts/testnet-bots.sh start`, commit `app/public/deployment.testnet.json` and redeploy the site.
 
@@ -163,7 +163,9 @@ Cost on testnet (gas is billed on the gas limit, about 102 gwei): roughly 0.31 M
 |---|---|
 | Add one asset (token + pool + registration) and its 10 markets | ~0.62 MON |
 | `MakerVault.refresh` (cancel + up to 6 orders + onchain fair value) | ~0.62 MON per market |
+| Resting GTC order with permit deposit (activity bot) | ~0.37M gas, ~0.038 MON |
+| Permit + IOC buy (activity bot) | ~0.57M gas, ~0.06 MON |
 | Price-sync step (mint + approve first time, then one swap) | ~0.01–0.03 MON |
 | `Book.resolve` of an expired market | ~0.1 MON (the keeper now skips markets with no collateral) |
 
-Vault refreshes dominate. For testnet liquidity, prefer a few refreshed near-the-money markets, or plain maker orders from a wallet, over refreshing every market.
+Vault refreshes dominate. Testnet liquidity therefore comes from `bots/src/quote.ts`: the bot wallet posts a YES bid and a YES ask ±3 ticks around the onchain fair value, several markets per `Book.multicall`, stale or unquoted markets first (roughly 10x cheaper than a refresh). `scripts/testnet-bots.sh` runs it every 30 minutes with `QUOTE_BUDGET=8` and starts the keeper with `KEEPER_REFRESH_LIMIT=0`.
